@@ -266,7 +266,7 @@ function render() {
       ${messages.length === 0 ? '<div class="empty-state">Tap the mic to start recording, tap again to send</div>' : ''}
       ${messages.map((m, i) => `
         <div class="message ${m.role}">
-          <div class="bubble">${marked.parse(m.text)}</div>
+          <div class="bubble">${marked.parse(String(m.text || ''))}</div>
           ${m.audioUrl ? `<div class="audio-slot" data-msg-idx="${i}"></div>` : ''}
           <div class="meta">${new Date(m.timestamp).toLocaleTimeString()}</div>
         </div>
@@ -669,7 +669,7 @@ async function resetSession() {
 // Restore persisted messages
 const savedMessages = loadMessages();
 if (savedMessages.length > 0) {
-  messages = savedMessages;
+  messages = savedMessages.map(m => ({ ...m, text: typeof m.text === 'string' ? m.text : extractText(m.text) }));
   // Mark all as played since we can't restore audio blobs
   messages.forEach(m => { m.audioPlayed = true; });
 }
