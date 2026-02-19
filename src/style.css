@@ -386,6 +386,23 @@ header .subtitle {
   font-size: 0.8rem;
 }
 
+/* Markdown inside bubbles */
+.bubble p { margin: 0 0 0.4em; }
+.bubble p:last-child { margin-bottom: 0; }
+.bubble code { background: rgba(0,0,0,0.25); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
+.bubble pre { background: rgba(0,0,0,0.3); padding: 0.6em 0.8em; border-radius: 6px; overflow-x: auto; margin: 0.4em 0; }
+.bubble pre code { background: none; padding: 0; }
+.bubble ul, .bubble ol { margin: 0.3em 0; padding-left: 1.4em; }
+.bubble li { margin: 0.15em 0; }
+.bubble h1, .bubble h2, .bubble h3, .bubble h4 { margin: 0.4em 0 0.2em; font-size: 1em; }
+.bubble h1 { font-size: 1.15em; }
+.bubble h2 { font-size: 1.08em; }
+.bubble blockquote { border-left: 3px solid var(--accent); padding-left: 0.6em; margin: 0.3em 0; opacity: 0.85; }
+.bubble a { color: var(--accent); }
+.bubble table { border-collapse: collapse; margin: 0.4em 0; font-size: 0.85em; }
+.bubble th, .bubble td { border: 1px solid var(--overlay); padding: 0.25em 0.5em; }
+.bubble strong { font-weight: 600; }
+
 .empty-state {
   flex: 1;
   display: flex;

@@ -1,5 +1,8 @@
 import './style.css';
+import { marked } from 'marked';
 import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startThinkingSound, stopThinkingSound } from './sounds';
+
+marked.setOptions({ breaks: true });
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -156,7 +159,7 @@ function render() {
       ${messages.length === 0 ? '<div class="empty-state">Tap the mic to start recording, tap again to send</div>' : ''}
       ${messages.map(m => `
         <div class="message ${m.role}">
-          <div class="bubble">${escapeHtml(m.text)}</div>
+          <div class="bubble">${marked.parse(m.text)}</div>
           ${m.audioUrl ? `<audio controls src="${m.audioUrl}" preload="auto"></audio>` : ''}
           <div class="meta">${new Date(m.timestamp).toLocaleTimeString()}</div>
         </div>
