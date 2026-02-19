@@ -39,7 +39,13 @@ async function loadSessions() {
     const res = await fetch(`${BASE}api/sessions`);
     if (res.ok) {
       const data = await res.json();
-      sessions = Array.isArray(data) ? data : (data.sessions || []);
+      const raw = Array.isArray(data) ? data : (data.sessions || []);
+      sessions = raw.map((s: any) => ({
+        sessionKey: s.sessionKey || s.key || '',
+        label: s.label || s.displayName || s.key || '',
+        lastMessage: typeof s.lastMessage === 'string' ? s.lastMessage : '',
+        lastActivity: s.lastActivity || s.updatedAt || '',
+      }));
     }
   } catch (e) {
     console.error('Failed to load sessions:', e);
@@ -172,8 +178,8 @@ function escapeHtml(text: string): string {
   return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function escapeAttr(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function escapeAttr(text: string | undefined | null): string {
+  return String(text || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function bindEvents() {
