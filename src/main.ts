@@ -1,6 +1,6 @@
 import './style.css';
 import { marked } from 'marked';
-import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startThinkingSound, stopThinkingSound } from './sounds';
+import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startTranscribingSound, stopTranscribingSound, startThinkingSound, stopThinkingSound } from './sounds';
 
 marked.setOptions({ breaks: true });
 
@@ -366,10 +366,12 @@ async function processRecording() {
 async function handleRecordingPipeline(blob: Blob) {
   try {
     // 1. Send audio to Whisper STT
+    startTranscribingSound();
     const formData = new FormData();
     formData.append('audio', blob, 'recording.webm');
 
     const sttRes = await fetch(`${BASE}api/stt`, { method: 'POST', body: formData });
+    stopTranscribingSound();
     if (!sttRes.ok) throw new Error(`STT failed: ${sttRes.statusText}`);
     const { text: userText } = await sttRes.json();
 
@@ -416,12 +418,14 @@ async function handleRecordingPipeline(blob: Blob) {
       console.warn('TTS failed:', e);
     }
 
-    // Play chime, then add message after a short delay so chime finishes before TTS
+    // Play chime, then add message
     soundResponseReceived();
     await new Promise(r => setTimeout(r, 400));
-    messages.push({ role: 'assistant', text: resultText, audioUrl, timestamp: Date.now() });
+    const msg: Message = { role: 'assistant', text: resultText, audioUrl, timestamp: Date.now(), audioPlayed: !!audioUrl };
+    messages.push(msg);
   } catch (err: any) {
     console.error('Process error:', err);
+    stopTranscribingSound();
     stopThinkingSound();
     soundError();
     messages.push({ role: 'assistant', text: `Error: ${err.message}`, timestamp: Date.now() });
@@ -429,6 +433,21 @@ async function handleRecordingPipeline(blob: Blob) {
 
   pendingRequests = Math.max(0, pendingRequests - 1);
   render();
+
+  // Directly autoplay the TTS if we have audio and conditions are met
+  const lastMsg = messages[messages.length - 1];
+  if (autoPlayTTS && !isRecording && lastMsg?.audioUrl && lastMsg.role === 'assistant') {
+    const conv = document.getElementById('conversation');
+    if (conv) {
+      const allAudio = conv.querySelectorAll('audio');
+      const audioEl = allAudio[allAudio.length - 1] as HTMLAudioElement | undefined;
+      if (audioEl) {
+        const doPlay = () => { audioEl.playbackRate = playbackSpeed; audioEl.play().catch(() => {}); };
+        if (audioEl.readyState >= 3) doPlay();
+        else audioEl.addEventListener('canplay', doPlay, { once: true });
+      }
+    }
+  }
 }
 
 function waitForResult(taskId: string): Promise<string> {

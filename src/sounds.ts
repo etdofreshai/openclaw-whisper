@@ -52,7 +52,32 @@ export function soundError() {
   playTone(262, 0.25, 'square', 0.1, 0.15);
 }
 
-// --- Thinking loop ---
+// --- Transcribing loop (doot-doot pattern) ---
+let transcribingInterval: ReturnType<typeof setInterval> | null = null;
+
+/** Start quiet doot-doot pattern while transcribing */
+export function startTranscribingSound() {
+  stopTranscribingSound();
+  playTranscribingPattern();
+  transcribingInterval = setInterval(playTranscribingPattern, 1500);
+}
+
+function playTranscribingPattern() {
+  const vol = 0.04;
+  const freq = 440; // A4
+  playTone(freq, 0.06, 'sine', vol);
+  playTone(freq, 0.06, 'sine', vol, 0.12);
+}
+
+/** Stop transcribing sound */
+export function stopTranscribingSound() {
+  if (transcribingInterval) {
+    clearInterval(transcribingInterval);
+    transcribingInterval = null;
+  }
+}
+
+// --- Thinking loop (doot-doot-doot pattern) ---
 let thinkingInterval: ReturnType<typeof setInterval> | null = null;
 let thinkingStep = 0;
 
