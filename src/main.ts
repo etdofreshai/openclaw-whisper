@@ -403,6 +403,25 @@ async function resetSession() {
 connectWs();
 render();
 
+// Load history for default session on startup
+(async () => {
+  try {
+    const res = await fetch(`${BASE}api/sessions/whisper-voice:ET/history`);
+    if (res.ok) {
+      const data = await res.json();
+      const hist = Array.isArray(data) ? data : (data.messages || []);
+      if (hist.length > 0 && messages.length === 0 && !selectedSessionKey) {
+        messages = hist.map((m: any) => ({
+          role: m.role === 'user' || m.sender === 'user' ? 'user' as const : 'assistant' as const,
+          text: m.text || m.content || m.message || '',
+          timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
+        }));
+        render();
+      }
+    }
+  } catch (e) { console.error('Failed to load default history:', e); }
+})();
+
 // Keyboard shortcut: Space to toggle recording
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && !e.repeat && !isProcessing && document.activeElement?.tagName !== 'SELECT') {
