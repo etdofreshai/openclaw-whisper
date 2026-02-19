@@ -24,8 +24,8 @@ let recordingStartTime = 0;
 let audioChunks: Blob[] = [];
 let ws: WebSocket | null = null;
 let isProcessing = false;
-let selectedVoice = 'coral';
-let autoPlayTTS = true;
+let selectedVoice = localStorage.getItem('openclaw-whisper-voice') || 'coral';
+let autoPlayTTS = localStorage.getItem('openclaw-whisper-autoplay') !== 'false';
 let sessions: Session[] = [];
 let selectedSessionKey: string | null = null; // null = default whisper session
 let sessionsLoading = false;
@@ -188,8 +188,8 @@ function bindEvents() {
   pttBtn.addEventListener('click', toggleRec);
   pttBtn.addEventListener('touchend', (e) => { e.preventDefault(); toggleRec(e); });
 
-  voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; });
-  autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; render(); });
+  voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; localStorage.setItem('openclaw-whisper-voice', selectedVoice); });
+  autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
   resetBtn.addEventListener('click', resetSession);
 
   // Session panel toggle
