@@ -33,6 +33,23 @@ let recordingCooldown = false;
 let selectedVoice = localStorage.getItem('openclaw-whisper-voice') || 'nova';
 let autoPlayTTS = localStorage.getItem('openclaw-whisper-autoplay') !== 'false';
 let playbackSpeed = parseFloat(localStorage.getItem('openclaw-whisper-speed') || '1');
+
+// Persistent audio element for TTS playback (unlocked on user gesture)
+let ttsAudio: HTMLAudioElement | null = null;
+function ensureTtsAudio(): HTMLAudioElement {
+  if (!ttsAudio) {
+    ttsAudio = new Audio();
+    ttsAudio.volume = 1;
+  }
+  return ttsAudio;
+}
+// Unlock audio on first user interaction
+function unlockAudio() {
+  const a = ensureTtsAudio();
+  // Play a silent buffer to unlock
+  a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
+}
 let sessions: Session[] = [];
 const DEFAULT_SESSION = 'whisper-voice:ET';
 let selectedSessionKey: string = DEFAULT_SESSION;
@@ -204,27 +221,17 @@ function render() {
   // Set playback speed on all audio elements and auto-play pending assistant audio
   const audioEls = conv.querySelectorAll('audio');
   audioEls.forEach(a => { a.playbackRate = playbackSpeed; });
-  if (autoPlayTTS && !isRecording && audioEls.length > 0) {
-    // Find the first unplayed assistant message and play it
-    let audioIdx = 0;
+  if (autoPlayTTS && !isRecording) {
+    // Find the first unplayed assistant message and play it via persistent audio
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i];
-      if (m.audioUrl) {
-        if (m.role === 'assistant' && !m.audioPlayed) {
-          m.audioPlayed = true;
-          const audioEl = audioEls[audioIdx] as HTMLAudioElement;
-          const tryPlay = () => {
-            audioEl.playbackRate = playbackSpeed;
-            audioEl.play().catch(() => {});
-          };
-          if (audioEl.readyState >= 3) {
-            tryPlay();
-          } else {
-            audioEl.addEventListener('canplay', tryPlay, { once: true });
-          }
-          break;
-        }
-        audioIdx++;
+      if (m.role === 'assistant' && m.audioUrl && !m.audioPlayed) {
+        m.audioPlayed = true;
+        const a = ensureTtsAudio();
+        a.src = m.audioUrl;
+        a.playbackRate = playbackSpeed;
+        a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
+        break;
       }
     }
   }
@@ -256,6 +263,7 @@ function bindEvents() {
   // Tap to toggle recording
   const toggleRec = (e: Event) => {
     e.preventDefault();
+    unlockAudio();
     if (recordingCooldown) return;
     if (isRecording) stopRecording();
     else startRecording();
@@ -434,19 +442,13 @@ async function handleRecordingPipeline(blob: Blob) {
   pendingRequests = Math.max(0, pendingRequests - 1);
   render();
 
-  // Directly autoplay the TTS if we have audio and conditions are met
+  // Directly autoplay the TTS using the persistent (unlocked) audio element
   const lastMsg = messages[messages.length - 1];
   if (autoPlayTTS && !isRecording && lastMsg?.audioUrl && lastMsg.role === 'assistant') {
-    const conv = document.getElementById('conversation');
-    if (conv) {
-      const allAudio = conv.querySelectorAll('audio');
-      const audioEl = allAudio[allAudio.length - 1] as HTMLAudioElement | undefined;
-      if (audioEl) {
-        const doPlay = () => { audioEl.playbackRate = playbackSpeed; audioEl.play().catch(() => {}); };
-        if (audioEl.readyState >= 3) doPlay();
-        else audioEl.addEventListener('canplay', doPlay, { once: true });
-      }
-    }
+    const a = ensureTtsAudio();
+    a.src = lastMsg.audioUrl;
+    a.playbackRate = playbackSpeed;
+    a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
   }
 }
 
