@@ -83,6 +83,7 @@ function connectToGateway(): void {
 
 function handleGatewayMessage(message: any): void {
   if (message.type === 'event' && (message.event === 'tick' || message.event === 'health')) return;
+  console.log(`GW msg: type=${message.type} event=${message.event||''} id=${message.id||''} ok=${message.ok} err=${message.error ? JSON.stringify(message.error).slice(0,200) : ''}`);
 
   if (message.type === 'event' && message.event === 'connect.challenge') {
     const nonce = message.payload?.nonce;
