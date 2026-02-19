@@ -697,9 +697,17 @@ async function resetSession() {
 // Restore persisted messages
 const savedMessages = loadMessages();
 if (savedMessages.length > 0) {
-  messages = savedMessages.map(m => ({ ...m, text: typeof m.text === 'string' ? m.text : extractText(m.text) }));
-  // Mark all as played since we can't restore audio blobs
-  messages.forEach(m => { m.audioPlayed = true; });
+  try {
+    messages = savedMessages.map(m => {
+      const text = typeof m.text === 'string' ? m.text : String(extractText(m.text) || '');
+      if (typeof text !== 'string') throw new Error('non-string text after extract');
+      return { ...m, text, audioPlayed: true, audioUrl: undefined };
+    });
+  } catch (e) {
+    console.error('Corrupt messages in localStorage, clearing:', e);
+    localStorage.removeItem(STORAGE_KEY_MESSAGES);
+    messages = [];
+  }
 }
 
 connectWs();
