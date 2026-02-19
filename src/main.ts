@@ -694,6 +694,13 @@ async function resetSession() {
 }
 
 // --- Init ---
+// Emergency clear via URL param
+if (new URLSearchParams(window.location.search).has('clear')) {
+  Object.keys(localStorage).filter(k => k.startsWith('openclaw-whisper')).forEach(k => localStorage.removeItem(k));
+  window.history.replaceState({}, '', window.location.pathname);
+  console.log('localStorage cleared via ?clear param');
+}
+
 // Restore persisted messages
 const savedMessages = loadMessages();
 if (savedMessages.length > 0) {
