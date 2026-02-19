@@ -33,6 +33,28 @@ let recordingCooldown = false;
 let selectedVoice = localStorage.getItem('openclaw-whisper-voice') || 'nova';
 let autoPlayTTS = localStorage.getItem('openclaw-whisper-autoplay') !== 'false';
 let playbackSpeed = parseFloat(localStorage.getItem('openclaw-whisper-speed') || '1');
+let volumeBoost = parseFloat(localStorage.getItem('openclaw-whisper-volume') || '100');
+
+// Web Audio gain node for volume boost beyond 100%
+let gainNode: GainNode | null = null;
+let mediaSource: MediaElementAudioSourceNode | null = null;
+let boostCtx: AudioContext | null = null;
+
+function applyVolumeBoost(audioEl: HTMLAudioElement) {
+  if (!boostCtx) boostCtx = new AudioContext();
+  if (boostCtx.state === 'suspended') boostCtx.resume();
+
+  // Only create the source node once per element
+  if (!mediaSource) {
+    mediaSource = boostCtx.createMediaElementSource(audioEl);
+    gainNode = boostCtx.createGain();
+    mediaSource.connect(gainNode);
+    gainNode.connect(boostCtx.destination);
+  }
+
+  // Set gain (1.0 = 100%, 2.0 = 200%)
+  if (gainNode) gainNode.gain.value = volumeBoost / 100;
+}
 
 // Persistent audio element for TTS playback (unlocked on user gesture)
 // This element gets embedded into the DOM as the visible player
@@ -199,19 +221,25 @@ function render() {
         </button>
       </div>
       <div class="settings">
-        <label>Voice:</label>
         <select id="voiceSelect">
+          <option disabled>— Voice —</option>
           ${['alloy','ash','ballad','coral','echo','fable','nova','onyx','shimmer'].map(v =>
             `<option value="${v}" ${v === selectedVoice ? 'selected' : ''}>${v}</option>`
           ).join('')}
         </select>
-        <label>Speed:</label>
         <select id="speedSelect">
+          <option disabled>— Speed —</option>
           ${['0.5','0.75','1','1.25','1.5','1.75','2'].map(s =>
             `<option value="${s}" ${parseFloat(s) === playbackSpeed ? 'selected' : ''}>${s}x</option>`
           ).join('')}
         </select>
-        <button class="btn ${autoPlayTTS ? 'active' : ''}" id="autoPlayBtn">🔊 Auto-play</button>
+        <select id="volumeSelect">
+          <option disabled>— Volume —</option>
+          ${['50','75','100','125','150','175','200'].map(v =>
+            `<option value="${v}" ${parseFloat(v) === volumeBoost ? 'selected' : ''}>${v}%</option>`
+          ).join('')}
+        </select>
+        <button class="btn ${autoPlayTTS ? 'active' : ''}" id="autoPlayBtn">🔊</button>
       </div>
     </div>
   `;
@@ -255,6 +283,7 @@ function render() {
         const a = ensureTtsAudio();
         a.src = m.audioUrl;
         a.playbackRate = playbackSpeed;
+        applyVolumeBoost(a);
         a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
         // Re-embed since ttsPlayingMsgIdx changed
         const slot = conv.querySelector(`.audio-slot[data-msg-idx="${i}"]`);
@@ -305,7 +334,10 @@ function bindEvents() {
   const speedSelect = document.getElementById('speedSelect') as HTMLSelectElement;
 
   voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; localStorage.setItem('openclaw-whisper-voice', selectedVoice); });
+  const volumeSelect = document.getElementById('volumeSelect') as HTMLSelectElement;
+
   speedSelect.addEventListener('change', () => { playbackSpeed = parseFloat(speedSelect.value); localStorage.setItem('openclaw-whisper-speed', String(playbackSpeed)); });
+  volumeSelect.addEventListener('change', () => { volumeBoost = parseFloat(volumeSelect.value); localStorage.setItem('openclaw-whisper-volume', String(volumeBoost)); if (ttsAudio) applyVolumeBoost(ttsAudio); });
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
   resetBtn?.addEventListener('click', resetSession);
 
@@ -480,6 +512,7 @@ async function handleRecordingPipeline(blob: Blob) {
     const a = ensureTtsAudio();
     a.src = lastMsg.audioUrl;
     a.playbackRate = playbackSpeed;
+    applyVolumeBoost(a);
     // Embed into the correct slot
     const conv = document.getElementById('conversation');
     const slot = conv?.querySelector(`.audio-slot[data-msg-idx="${lastMsgIdx}"]`);
