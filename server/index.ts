@@ -277,18 +277,11 @@ app.post('/api/send', async (req, res) => {
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     activeRuns.set(requestId, { taskId, text: '' });
 
-    // If a specific session key is provided, use sessions.send; otherwise use chat.send with default
-    if (targetSessionKey) {
-      gatewayWs.send(JSON.stringify({
-        type: 'req', id: requestId, method: 'sessions.send',
-        params: { sessionKey: targetSessionKey, message, idempotencyKey: requestId }
-      }));
-    } else {
-      gatewayWs.send(JSON.stringify({
-        type: 'req', id: requestId, method: 'chat.send',
-        params: { sessionKey: getSessionKey(), message, idempotencyKey: requestId }
-      }));
-    }
+    const sessionKey = targetSessionKey || getSessionKey();
+    gatewayWs.send(JSON.stringify({
+      type: 'req', id: requestId, method: 'chat.send',
+      params: { sessionKey, message, idempotencyKey: requestId }
+    }));
 
     // Handle the initial response
     const timeout = setTimeout(() => {
