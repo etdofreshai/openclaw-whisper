@@ -4,7 +4,15 @@ let audioCtx: AudioContext | null = null;
 
 function getCtx(): AudioContext {
   if (!audioCtx) audioCtx = new AudioContext();
+  // Resume if suspended (mobile autoplay policy)
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
+}
+
+/** Call on user gesture to unlock AudioContext for mobile */
+export function unlockAudioCtx() {
+  const ctx = getCtx();
+  if (ctx.state === 'suspended') ctx.resume();
 }
 
 function playTone(freq: number, duration: number, type: OscillatorType = 'sine', volume = 0.15, startTime = 0) {

@@ -1,6 +1,6 @@
 import './style.css';
 import { marked } from 'marked';
-import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startTranscribingSound, stopTranscribingSound, startThinkingSound, stopThinkingSound } from './sounds';
+import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startTranscribingSound, stopTranscribingSound, startThinkingSound, stopThinkingSound, unlockAudioCtx } from './sounds';
 
 marked.setOptions({ breaks: true });
 
@@ -264,6 +264,7 @@ function bindEvents() {
   const toggleRec = (e: Event) => {
     e.preventDefault();
     unlockAudio();
+    unlockAudioCtx();
     if (recordingCooldown) return;
     if (isRecording) stopRecording();
     else startRecording();
