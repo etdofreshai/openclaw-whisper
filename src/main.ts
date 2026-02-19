@@ -1,4 +1,5 @@
 import './style.css';
+import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startThinkingSound, stopThinkingSound } from './sounds';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -305,6 +306,7 @@ async function startRecording() {
     mediaRecorder.start();
     recordingStartTime = Date.now();
     isRecording = true;
+    soundRecordStart();
     render();
   } catch (err) {
     console.error('Mic error:', err);
@@ -323,6 +325,7 @@ function stopRecording() {
     // Keep recording for 500ms of silence buffer before stopping
     // This helps Whisper detect the end of speech cleanly
     isRecording = false;
+    soundRecordStop();
     render();
     setTimeout(() => {
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -380,9 +383,12 @@ async function handleRecordingPipeline(blob: Blob) {
 
     if (!chatRes.ok) throw new Error(`Chat failed: ${chatRes.statusText}`);
     const { taskId } = await chatRes.json();
+    soundSendSuccess();
+    startThinkingSound();
 
     // 3. Wait for result via WebSocket
     const resultText = await waitForResult(taskId);
+    stopThinkingSound();
 
     // 4. Get TTS audio
     let audioUrl: string | undefined;
@@ -401,9 +407,12 @@ async function handleRecordingPipeline(blob: Blob) {
     }
 
     // Add assistant message (autoplay handled by render)
+    soundResponseReceived();
     messages.push({ role: 'assistant', text: resultText, audioUrl, timestamp: Date.now() });
   } catch (err: any) {
     console.error('Process error:', err);
+    stopThinkingSound();
+    soundError();
     messages.push({ role: 'assistant', text: `Error: ${err.message}`, timestamp: Date.now() });
   }
 
