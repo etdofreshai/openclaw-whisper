@@ -24,7 +24,8 @@ let mediaRecorder: MediaRecorder | null = null;
 let recordingStartTime = 0;
 let audioChunks: Blob[] = [];
 let ws: WebSocket | null = null;
-let isProcessing = false;
+let pendingRequests = 0;
+let recordingCooldown = false;
 let selectedVoice = localStorage.getItem('openclaw-whisper-voice') || 'nova';
 let autoPlayTTS = localStorage.getItem('openclaw-whisper-autoplay') !== 'false';
 let playbackSpeed = parseFloat(localStorage.getItem('openclaw-whisper-speed') || '1');
@@ -159,7 +160,7 @@ function render() {
           <div class="meta">${new Date(m.timestamp).toLocaleTimeString()}</div>
         </div>
       `).join('')}
-      ${isProcessing ? `
+      ${pendingRequests > 0 ? `
         <div class="message assistant">
           <div class="thinking"><div class="spinner"></div> Thinking...</div>
         </div>
@@ -167,7 +168,7 @@ function render() {
     </div>
     <div class="controls">
       <div class="controls-row">
-        <button class="ptt-btn ${isRecording ? 'recording' : ''}" id="pttBtn" ${isProcessing ? 'disabled' : ''}>
+        <button class="ptt-btn ${isRecording ? 'recording' : ''}" id="pttBtn" ${recordingCooldown ? 'disabled' : ''}>
           ${isRecording ? '⏹' : '🎤'}
         </button>
       </div>
@@ -196,16 +197,24 @@ function render() {
   // Bind events
   bindEvents();
 
-  // Set playback speed on all audio elements and auto-play the latest assistant audio
+  // Set playback speed on all audio elements and auto-play pending assistant audio
   const audioEls = conv.querySelectorAll('audio');
   audioEls.forEach(a => { a.playbackRate = playbackSpeed; });
-  if (autoPlayTTS && audioEls.length > 0) {
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg && lastMsg.role === 'assistant' && lastMsg.audioUrl && !lastMsg.audioPlayed) {
-      lastMsg.audioPlayed = true;
-      const lastAudio = audioEls[audioEls.length - 1] as HTMLAudioElement;
-      lastAudio.playbackRate = playbackSpeed;
-      lastAudio.play().catch(() => {});
+  if (autoPlayTTS && !isRecording && audioEls.length > 0) {
+    // Find the first unplayed assistant message and play it
+    let audioIdx = 0;
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+      if (m.audioUrl) {
+        if (m.role === 'assistant' && !m.audioPlayed) {
+          m.audioPlayed = true;
+          const audioEl = audioEls[audioIdx] as HTMLAudioElement;
+          audioEl.playbackRate = playbackSpeed;
+          audioEl.play().catch(() => {});
+          break;
+        }
+        audioIdx++;
+      }
     }
   }
 }
@@ -236,7 +245,7 @@ function bindEvents() {
   // Tap to toggle recording
   const toggleRec = (e: Event) => {
     e.preventDefault();
-    if (isProcessing) return;
+    if (recordingCooldown) return;
     if (isRecording) stopRecording();
     else startRecording();
   };
@@ -329,12 +338,21 @@ function stopRecording() {
 async function processRecording() {
   const duration = Date.now() - recordingStartTime;
   if (audioChunks.length === 0 || duration < 300) return; // min 300ms
-  isProcessing = true;
-  render();
 
+  // Start cooldown
+  recordingCooldown = true;
+  render();
+  setTimeout(() => { recordingCooldown = false; render(); }, 500);
+
+  const blob = new Blob(audioChunks, { type: 'audio/webm' });
+
+  // Fire off the pipeline without blocking
+  handleRecordingPipeline(blob);
+}
+
+async function handleRecordingPipeline(blob: Blob) {
   try {
     // 1. Send audio to Whisper STT
-    const blob = new Blob(audioChunks, { type: 'audio/webm' });
     const formData = new FormData();
     formData.append('audio', blob, 'recording.webm');
 
@@ -342,18 +360,15 @@ async function processRecording() {
     if (!sttRes.ok) throw new Error(`STT failed: ${sttRes.statusText}`);
     const { text: userText } = await sttRes.json();
 
-    if (!userText || userText.trim().length === 0) {
-      isProcessing = false;
-      render();
-      return;
-    }
+    if (!userText || userText.trim().length === 0) return;
 
     // Add user message with recorded audio
     const userAudioUrl = URL.createObjectURL(blob);
     messages.push({ role: 'user', text: userText, audioUrl: userAudioUrl, timestamp: Date.now() });
+    pendingRequests++;
     render();
 
-    // 2. Send to OpenClaw (include sessionKey if selected)
+    // 2. Send to OpenClaw
     const sendBody: any = { message: userText };
     if (selectedSessionKey) sendBody.sessionKey = selectedSessionKey;
 
@@ -380,20 +395,19 @@ async function processRecording() {
       if (ttsRes.ok) {
         const audioBlob = await ttsRes.blob();
         audioUrl = URL.createObjectURL(audioBlob);
-        // Audio will be auto-played via the rendered <audio> element below
       }
     } catch (e) {
       console.warn('TTS failed:', e);
     }
 
-    // Add assistant message
+    // Add assistant message (autoplay handled by render)
     messages.push({ role: 'assistant', text: resultText, audioUrl, timestamp: Date.now() });
   } catch (err: any) {
     console.error('Process error:', err);
     messages.push({ role: 'assistant', text: `Error: ${err.message}`, timestamp: Date.now() });
   }
 
-  isProcessing = false;
+  pendingRequests = Math.max(0, pendingRequests - 1);
   render();
 }
 
@@ -442,7 +456,7 @@ function connectWs() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
-      if (msg.type === 'result' && !isProcessing) {
+      if (msg.type === 'result' && pendingRequests === 0) {
         handleAsyncResult(msg);
       }
     } catch {}
@@ -483,7 +497,7 @@ selectSession(DEFAULT_SESSION);
 
 // Keyboard shortcut: Space to toggle recording
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.repeat && !isProcessing && document.activeElement?.tagName !== 'SELECT') {
+  if (e.code === 'Space' && !e.repeat && !recordingCooldown && document.activeElement?.tagName !== 'SELECT') {
     e.preventDefault();
     if (isRecording) stopRecording();
     else startRecording();
