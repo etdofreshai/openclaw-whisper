@@ -13,6 +13,7 @@ interface Message {
 let messages: Message[] = [];
 let isRecording = false;
 let mediaRecorder: MediaRecorder | null = null;
+let recordingStartTime = 0;
 let audioChunks: Blob[] = [];
 let ws: WebSocket | null = null;
 let isProcessing = false;
@@ -111,6 +112,7 @@ async function startRecording() {
       processRecording();
     };
     mediaRecorder.start();
+    recordingStartTime = Date.now();
     isRecording = true;
     render();
   } catch (err) {
@@ -134,7 +136,8 @@ function stopRecording() {
 }
 
 async function processRecording() {
-  if (audioChunks.length === 0) return;
+  const duration = Date.now() - recordingStartTime;
+  if (audioChunks.length === 0 || duration < 300) return; // min 300ms
   isProcessing = true;
   render();
 
