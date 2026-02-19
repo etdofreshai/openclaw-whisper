@@ -41,8 +41,20 @@ function saveMessages() {
 function loadMessages(): Message[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_MESSAGES);
-    if (raw) return JSON.parse(raw);
-  } catch {}
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((m: any) => ({
+        ...m,
+        text: typeof m.text === 'string' ? m.text : extractText(m.text) || '[message]',
+        role: m.role === 'user' ? 'user' : 'assistant',
+        timestamp: typeof m.timestamp === 'number' ? m.timestamp : Date.now(),
+      }));
+    }
+  } catch {
+    // Corrupt localStorage — clear it
+    try { localStorage.removeItem(STORAGE_KEY_MESSAGES); } catch {}
+  }
   return [];
 }
 
@@ -228,6 +240,7 @@ function getSessionLabel(s: Session): string {
 
 // --- Render ---
 function render() {
+ try {
   const app = document.getElementById('app')!;
   app.innerHTML = `
     <header>
@@ -359,13 +372,16 @@ function render() {
       }
     }
   }
+ } catch (err) { console.error('Process error:', err); }
 }
 
 function extractText(content: any): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map((c: any) => c.type === 'text' ? c.text : '').filter(Boolean).join('\n');
-  if (content && typeof content === 'object' && content.text) return content.text;
-  return '';
+  try {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content.map((c: any) => typeof c === 'string' ? c : (c?.text || '')).filter(Boolean).join('\n');
+    if (content && typeof content === 'object' && typeof content.text === 'string') return content.text;
+    return typeof content === 'undefined' || content === null ? '' : String(content);
+  } catch { return '[error extracting text]'; }
 }
 
 function escapeHtml(text: string): string {

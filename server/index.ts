@@ -68,8 +68,8 @@ function connectToGateway(): void {
     });
 
     gatewayWs.on('error', (error) => { console.error('Gateway error:', error); isConnecting = false; });
-    gatewayWs.on('close', () => {
-      console.log('Gateway closed, reconnecting...');
+    gatewayWs.on('close', (code: number, reason: Buffer) => {
+      console.log(`Gateway closed (code: ${code}, reason: ${reason.toString()}), reconnecting...`);
       gatewayWs = null;
       isConnecting = false;
       setTimeout(connectToGateway, 5000);
