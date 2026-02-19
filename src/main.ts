@@ -27,7 +27,8 @@ let isProcessing = false;
 let selectedVoice = localStorage.getItem('openclaw-whisper-voice') || 'coral';
 let autoPlayTTS = localStorage.getItem('openclaw-whisper-autoplay') !== 'false';
 let sessions: Session[] = [];
-let selectedSessionKey: string | null = null; // null = default whisper session
+const DEFAULT_SESSION = 'whisper-voice:ET';
+let selectedSessionKey: string = DEFAULT_SESSION;
 let sessionsLoading = false;
 let showSessionPanel = false;
 let sessionSearchQuery = '';
@@ -55,33 +56,38 @@ async function loadSessions() {
   render();
 }
 
-async function selectSession(sessionKey: string | null) {
+async function selectSession(sessionKey: string) {
   selectedSessionKey = sessionKey;
   messages = [];
+  showSessionPanel = false;
   render();
 
-  if (sessionKey) {
-    try {
-      const res = await fetch(`${BASE}api/sessions/${encodeURIComponent(sessionKey)}/history`);
-      if (res.ok) {
-        const data = await res.json();
-        const hist = Array.isArray(data) ? data : (data.messages || []);
-        messages = hist.map((m: any) => ({
-          role: m.role === 'user' || m.sender === 'user' ? 'user' as const : 'assistant' as const,
-          text: extractText(m.text || m.content || m.message || ''),
-          timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
-        }));
-      }
-    } catch (e) {
-      console.error('Failed to load history:', e);
+  try {
+    const res = await fetch(`${BASE}api/sessions/${encodeURIComponent(sessionKey)}/history`);
+    if (res.ok) {
+      const data = await res.json();
+      const hist = Array.isArray(data) ? data : (data.messages || []);
+      messages = hist.map((m: any) => ({
+        role: m.role === 'user' || m.sender === 'user' ? 'user' as const : 'assistant' as const,
+        text: extractText(m.text || m.content || m.message || ''),
+        timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
+      }));
     }
+  } catch (e) {
+    console.error('Failed to load history:', e);
   }
-  showSessionPanel = false;
   render();
 }
 
 function getFilteredSessions(): Session[] {
-  const sorted = [...sessions].sort((a, b) => {
+  // Ensure whisper-voice session is always present
+  const hasWhisper = sessions.some(s => s.sessionKey === DEFAULT_SESSION);
+  const all = hasWhisper ? [...sessions] : [{ sessionKey: DEFAULT_SESSION, label: '🎙️ Whisper Voice' }, ...sessions];
+  
+  // Sort: whisper-voice pinned first, then by most recent
+  const sorted = all.sort((a, b) => {
+    if (a.sessionKey === DEFAULT_SESSION) return -1;
+    if (b.sessionKey === DEFAULT_SESSION) return 1;
     const ta = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
     const tb = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
     return tb - ta;
@@ -89,6 +95,7 @@ function getFilteredSessions(): Session[] {
   if (!sessionSearchQuery.trim()) return sorted;
   const q = sessionSearchQuery.toLowerCase();
   return sorted.filter(s => 
+    s.sessionKey === DEFAULT_SESSION || // always show whisper-voice
     getSessionLabel(s).toLowerCase().includes(q) ||
     s.sessionKey.toLowerCase().includes(q) ||
     (s.lastMessage || '').toLowerCase().includes(q)
@@ -113,7 +120,7 @@ function render() {
     </header>
     <div class="session-bar">
       <button class="session-toggle-btn" id="sessionToggleBtn">
-        📋 ${selectedSessionKey ? getSessionLabel({ sessionKey: selectedSessionKey }) : 'Default Session'}
+        📋 ${getSessionLabel({ sessionKey: selectedSessionKey })}
         <span class="caret">▾</span>
       </button>
     </div>
@@ -127,9 +134,6 @@ function render() {
         <input type="text" id="sessionSearchInput" placeholder="Search sessions..." value="${escapeAttr(sessionSearchQuery)}" autocomplete="off" />
       </div>
       <div class="session-list">
-        <button class="session-item ${selectedSessionKey === null ? 'active' : ''}" data-key="">
-          🎙️ Default (Whisper Voice)
-        </button>
         ${sessionsLoading ? '<div class="session-loading"><div class="spinner"></div> Loading...</div>' : ''}
         ${getFilteredSessions().map(s => `
           <button class="session-item ${selectedSessionKey === s.sessionKey ? 'active' : ''}" data-key="${escapeAttr(s.sessionKey)}">
@@ -173,7 +177,6 @@ function render() {
           ).join('')}
         </select>
         <button class="btn ${autoPlayTTS ? 'active' : ''}" id="autoPlayBtn">🔊 Auto-play</button>
-        <button class="btn" id="resetBtn">🔄 New Session</button>
       </div>
     </div>
   `;
@@ -249,8 +252,8 @@ function bindEvents() {
   // Session item clicks
   document.querySelectorAll('.session-item').forEach(el => {
     el.addEventListener('click', () => {
-      const key = (el as HTMLElement).dataset.key || '';
-      selectSession(key || null);
+      const key = (el as HTMLElement).dataset.key || DEFAULT_SESSION;
+      selectSession(key);
     });
   });
 }
@@ -446,23 +449,7 @@ connectWs();
 render();
 
 // Load history for default session on startup
-(async () => {
-  try {
-    const res = await fetch(`${BASE}api/sessions/whisper-voice:ET/history`);
-    if (res.ok) {
-      const data = await res.json();
-      const hist = Array.isArray(data) ? data : (data.messages || []);
-      if (hist.length > 0 && messages.length === 0 && !selectedSessionKey) {
-        messages = hist.map((m: any) => ({
-          role: m.role === 'user' || m.sender === 'user' ? 'user' as const : 'assistant' as const,
-          text: extractText(m.text || m.content || m.message || ''),
-          timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
-        }));
-        render();
-      }
-    }
-  } catch (e) { console.error('Failed to load default history:', e); }
-})();
+selectSession(DEFAULT_SESSION);
 
 // Keyboard shortcut: Space to toggle recording
 document.addEventListener('keydown', (e) => {
