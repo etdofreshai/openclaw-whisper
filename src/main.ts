@@ -21,6 +21,68 @@ interface Session {
   lastActivity?: string;
 }
 
+// --- Persistence ---
+const STORAGE_KEY_MESSAGES = 'openclaw-whisper-messages';
+const STORAGE_KEY_PENDING = 'openclaw-whisper-pending';
+
+interface PendingTask {
+  taskId: string;
+  timestamp: number;
+}
+
+function saveMessages() {
+  // Save messages without blob audioUrls (those don't survive reload)
+  const serializable = messages.map(m => ({ ...m, audioUrl: undefined }));
+  try { localStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(serializable)); } catch {}
+}
+
+function loadMessages(): Message[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_MESSAGES);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
+function savePendingTasks(tasks: PendingTask[]) {
+  try { localStorage.setItem(STORAGE_KEY_PENDING, JSON.stringify(tasks)); } catch {}
+}
+
+function loadPendingTasks(): PendingTask[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PENDING);
+    if (raw) {
+      const tasks: PendingTask[] = JSON.parse(raw);
+      // Expire tasks older than 5 minutes
+      const cutoff = Date.now() - 5 * 60 * 1000;
+      return tasks.filter(t => t.timestamp > cutoff);
+    }
+  } catch {}
+  return [];
+}
+
+let pendingTasks: PendingTask[] = loadPendingTasks();
+
+function addPendingTask(taskId: string) {
+  pendingTasks.push({ taskId, timestamp: Date.now() });
+  savePendingTasks(pendingTasks);
+}
+
+function removePendingTask(taskId: string) {
+  pendingTasks = pendingTasks.filter(t => t.taskId !== taskId);
+  savePendingTasks(pendingTasks);
+}
+
+function pushMessage(msg: Message) {
+  pushMessage(msg);
+  saveMessages();
+}
+
+function clearMessages() {
+  messages = [];
+  saveMessages();
+}
+
 // --- State ---
 let messages: Message[] = [];
 let isRecording = false;
@@ -109,7 +171,7 @@ async function loadSessions() {
 
 async function selectSession(sessionKey: string) {
   selectedSessionKey = sessionKey;
-  messages = [];
+  clearMessages();
   showSessionPanel = false;
   render();
 
@@ -127,6 +189,7 @@ async function selectSession(sessionKey: string) {
   } catch (e) {
     console.error('Failed to load history:', e);
   }
+  saveMessages();
   render();
 }
 
@@ -449,7 +512,7 @@ async function handleRecordingPipeline(blob: Blob) {
 
     // Add user message with recorded audio
     const userAudioUrl = URL.createObjectURL(blob);
-    messages.push({ role: 'user', text: userText, audioUrl: userAudioUrl, timestamp: Date.now() });
+    pushMessage({ role: 'user', text: userText, audioUrl: userAudioUrl, timestamp: Date.now() });
     pendingRequests++;
     render();
 
@@ -465,11 +528,13 @@ async function handleRecordingPipeline(blob: Blob) {
 
     if (!chatRes.ok) throw new Error(`Chat failed: ${chatRes.statusText}`);
     const { taskId } = await chatRes.json();
+    addPendingTask(taskId);
     soundSendSuccess();
     startThinkingSound();
 
     // 3. Wait for result via WebSocket
     const resultText = await waitForResult(taskId);
+    removePendingTask(taskId);
     stopThinkingSound();
 
     // 4. Get TTS audio
@@ -492,13 +557,13 @@ async function handleRecordingPipeline(blob: Blob) {
     soundResponseReceived();
     await new Promise(r => setTimeout(r, 400));
     const msg: Message = { role: 'assistant', text: resultText, audioUrl, timestamp: Date.now(), audioPlayed: !!audioUrl };
-    messages.push(msg);
+    pushMessage(msg);
   } catch (err: any) {
     console.error('Process error:', err);
     stopTranscribingSound();
     stopThinkingSound();
     soundError();
-    messages.push({ role: 'assistant', text: `Error: ${err.message}`, timestamp: Date.now() });
+    pushMessage({ role: 'assistant', text: `Error: ${err.message}`, timestamp: Date.now() });
   }
 
   pendingRequests = Math.max(0, pendingRequests - 1);
@@ -590,22 +655,98 @@ async function handleAsyncResult(msg: any) {
     }
   } catch {}
 
-  messages.push({ role: 'assistant', text: msg.text, audioUrl, timestamp: Date.now() });
+  pushMessage({ role: 'assistant', text: msg.text, audioUrl, timestamp: Date.now() });
   render();
 }
 
 async function resetSession() {
   await fetch(`${BASE}api/session/reset`, { method: 'POST' });
-  messages = [];
+  clearMessages();
   render();
 }
 
 // --- Init ---
+// Restore persisted messages
+const savedMessages = loadMessages();
+if (savedMessages.length > 0) {
+  messages = savedMessages;
+  // Mark all as played since we can't restore audio blobs
+  messages.forEach(m => { m.audioPlayed = true; });
+}
+
 connectWs();
 render();
 
-// Load history for default session on startup
-selectSession(DEFAULT_SESSION);
+// Only load history from server if we have no persisted messages
+if (savedMessages.length === 0) {
+  selectSession(DEFAULT_SESSION);
+}
+
+// Resume listening for pending tasks
+function resumePendingTasks() {
+  const tasks = loadPendingTasks();
+  if (tasks.length === 0) return;
+  pendingRequests = tasks.length;
+  startThinkingSound();
+  render();
+  
+  tasks.forEach(task => {
+    waitForResult(task.taskId).then(async (resultText) => {
+      removePendingTask(task.taskId);
+      stopThinkingSound();
+
+      // Get TTS audio
+      let audioUrl: string | undefined;
+      try {
+        const ttsRes = await fetch(`${BASE}api/tts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: resultText, voice: selectedVoice }),
+        });
+        if (ttsRes.ok) {
+          const audioBlob = await ttsRes.blob();
+          audioUrl = URL.createObjectURL(audioBlob);
+        }
+      } catch {}
+
+      soundResponseReceived();
+      await new Promise(r => setTimeout(r, 400));
+      pushMessage({ role: 'assistant', text: resultText, audioUrl, timestamp: Date.now(), audioPlayed: !!audioUrl });
+      pendingRequests = Math.max(0, pendingRequests - 1);
+      render();
+
+      // Autoplay
+      if (autoPlayTTS && !isRecording && audioUrl) {
+        const lastMsgIdx = messages.length - 1;
+        ttsPlayingMsgIdx = lastMsgIdx;
+        const a = ensureTtsAudio();
+        a.src = audioUrl;
+        a.playbackRate = playbackSpeed;
+        applyVolumeBoost(a);
+        const conv = document.getElementById('conversation');
+        const slot = conv?.querySelector(`.audio-slot[data-msg-idx="${lastMsgIdx}"]`);
+        if (slot) { slot.innerHTML = ''; slot.appendChild(a); }
+        a.play().catch(() => {});
+        if (conv) conv.scrollTop = conv.scrollHeight;
+      }
+    }).catch(() => {
+      removePendingTask(task.taskId);
+      pendingRequests = Math.max(0, pendingRequests - 1);
+      stopThinkingSound();
+      render();
+    });
+  });
+}
+
+// Wait for WS to connect before resuming pending tasks
+if (pendingTasks.length > 0) {
+  const checkWs = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      clearInterval(checkWs);
+      resumePendingTasks();
+    }
+  }, 200);
+}
 
 // Keyboard shortcut: Space to toggle recording
 document.addEventListener('keydown', (e) => {
