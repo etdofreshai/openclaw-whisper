@@ -307,9 +307,9 @@ function render() {
     </div>
   `;
 
-  // Scroll to bottom
+  // Scroll to bottom (use rAF to ensure layout is complete)
   const conv = document.getElementById('conversation')!;
-  conv.scrollTop = conv.scrollHeight;
+  requestAnimationFrame(() => { conv.scrollTop = conv.scrollHeight; });
 
   // Bind events
   bindEvents();
