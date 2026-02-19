@@ -114,6 +114,7 @@ function handleGatewayMessage(message: any): void {
       pending.reject(new Error(typeof message.error === 'string' ? message.error : message.error.message || JSON.stringify(message.error)));
     } else {
       const result = message.result || message.payload;
+      console.log(`Request resolved: id=${message.id} result=${JSON.stringify(result).slice(0, 200)}`);
       if (result?.runId && activeRuns.has(message.id)) {
         const run = activeRuns.get(message.id)!;
         activeRuns.delete(message.id);
@@ -127,6 +128,7 @@ function handleGatewayMessage(message: any): void {
   // Handle agent streaming events
   if (message.type === 'event' && message.event === 'agent') {
     const { runId, stream, data, sessionKey } = message.payload || {};
+    console.log(`Agent event: stream=${stream} phase=${data?.phase} runId=${runId} sessionKey=${sessionKey} activeRuns=${[...activeRuns.keys()].join(',')}`);
     if (!runId) return;
     let run = activeRuns.get(runId);
 
