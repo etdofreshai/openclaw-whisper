@@ -319,7 +319,7 @@ app.get('/api/sessions', async (_req, res) => {
       pendingRequests.set(requestId, { resolve, reject, timeout });
       const msg = JSON.stringify({
         type: 'req', id: requestId, method: 'sessions.list',
-        params: { limit: 50, messageLimit: 1 }
+        params: { limit: 50, includeGlobal: true }
       });
       console.log('Sending sessions.list:', msg);
       gatewayWs!.send(msg);
@@ -344,7 +344,7 @@ app.get('/api/sessions/:sessionKey/history', async (req, res) => {
       const timeout = setTimeout(() => { pendingRequests.delete(requestId); reject(new Error('Timeout')); }, 15000);
       pendingRequests.set(requestId, { resolve, reject, timeout });
       gatewayWs!.send(JSON.stringify({
-        type: 'req', id: requestId, method: 'sessions.history',
+        type: 'req', id: requestId, method: 'chat.history',
         params: { sessionKey, limit: 50 }
       }));
     });
