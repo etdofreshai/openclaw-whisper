@@ -350,6 +350,27 @@ header .subtitle {
   cursor: not-allowed;
 }
 
+.clear-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--overlay);
+  background: var(--surface);
+  color: var(--subtext);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  right: -60px;
+}
+
+.clear-btn:hover { background: var(--overlay); color: var(--red); }
+
+.controls-row { position: relative; }
+
 .btn {
   padding: 0.5rem 1rem;
   border-radius: 8px;

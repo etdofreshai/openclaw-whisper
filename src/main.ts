@@ -282,6 +282,7 @@ function render() {
         <button class="ptt-btn ${isRecording ? 'recording' : ''}" id="pttBtn" ${recordingCooldown ? 'disabled' : ''}>
           ${isRecording ? '⏹' : '🎤'}
         </button>
+        <button class="clear-btn" id="clearBtn" title="Clear local data">🗑️</button>
       </div>
       <div class="settings">
         <select id="voiceSelect">
@@ -403,6 +404,15 @@ function bindEvents() {
   volumeSelect.addEventListener('change', () => { volumeBoost = parseFloat(volumeSelect.value); localStorage.setItem('openclaw-whisper-volume', String(volumeBoost)); if (ttsAudio) applyVolumeBoost(ttsAudio); });
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
   resetBtn?.addEventListener('click', resetSession);
+
+  const clearBtn = document.getElementById('clearBtn');
+  clearBtn?.addEventListener('click', () => {
+    if (confirm('Clear all local data? This removes cached messages, settings, and reloads the page.')) {
+      const keys = Object.keys(localStorage).filter(k => k.startsWith('openclaw-whisper'));
+      keys.forEach(k => localStorage.removeItem(k));
+      location.reload();
+    }
+  });
 
   // Session panel toggle
   sessionToggleBtn?.addEventListener('click', () => {
