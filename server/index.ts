@@ -321,7 +321,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const distPath = join(__dirname, '..', 'dist');
+const distPath = join(__dirname, '..', '..', 'dist');
 app.use(express.static(distPath));
 app.get('*', (_req, res) => { res.sendFile(join(distPath, 'index.html')); });
 
