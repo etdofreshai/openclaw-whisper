@@ -16,13 +16,6 @@ interface Message {
   audioPlayed?: boolean;
 }
 
-interface Session {
-  sessionKey: string;
-  label?: string;
-  lastMessage?: string;
-  lastActivity?: string;
-}
-
 // --- Persistence ---
 const STORAGE_KEY_MESSAGES = 'openclaw-whisper-messages';
 const STORAGE_KEY_PENDING = 'openclaw-whisper-pending';
@@ -88,7 +81,7 @@ function removePendingTask(taskId: string) {
 }
 
 function pushMessage(msg: Message) {
-  pushMessage(msg);
+  messages.push(msg);
   saveMessages();
 }
 
@@ -153,90 +146,6 @@ function unlockAudio() {
   a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
   a.play().then(() => { a.pause(); a.currentTime = 0; if (wasSrc) a.src = wasSrc; }).catch(() => {});
 }
-let sessions: Session[] = [];
-const DEFAULT_SESSION = 'whisper-voice:ET';
-let selectedSessionKey: string = DEFAULT_SESSION;
-let sessionsLoading = false;
-let showSessionPanel = false;
-let sessionSearchQuery = '';
-
-// --- Sessions ---
-async function loadSessions() {
-  sessionsLoading = true;
-  render();
-  try {
-    const res = await fetch(`${BASE}api/sessions`);
-    if (res.ok) {
-      const data = await res.json();
-      const raw = Array.isArray(data) ? data : (data.sessions || []);
-      sessions = raw.map((s: any) => ({
-        sessionKey: s.sessionKey || s.key || '',
-        label: s.label || s.displayName || s.key || '',
-        lastMessage: typeof s.lastMessage === 'string' ? s.lastMessage : '',
-        lastActivity: s.lastActivity || s.updatedAt || '',
-      }));
-    }
-  } catch (e) {
-    console.error('Failed to load sessions:', e);
-  }
-  sessionsLoading = false;
-  render();
-}
-
-async function selectSession(sessionKey: string) {
-  selectedSessionKey = sessionKey;
-  clearMessages();
-  showSessionPanel = false;
-  render();
-
-  try {
-    const res = await fetch(`${BASE}api/sessions/${encodeURIComponent(sessionKey)}/history`);
-    if (res.ok) {
-      const data = await res.json();
-      const hist = Array.isArray(data) ? data : (data.messages || []);
-      messages = hist.map((m: any) => ({
-        role: m.role === 'user' || m.sender === 'user' ? 'user' as const : 'assistant' as const,
-        text: extractText(m.text || m.content || m.message || ''),
-        timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
-      }));
-    }
-  } catch (e) {
-    console.error('Failed to load history:', e);
-  }
-  saveMessages();
-  render();
-}
-
-function getFilteredSessions(): Session[] {
-  // Ensure whisper-voice session is always present
-  const hasWhisper = sessions.some(s => s.sessionKey === DEFAULT_SESSION);
-  const all = hasWhisper ? [...sessions] : [{ sessionKey: DEFAULT_SESSION, label: '🎙️ Whisper Voice' }, ...sessions];
-  
-  // Sort: whisper-voice pinned first, then by most recent
-  const sorted = all.sort((a, b) => {
-    if (a.sessionKey === DEFAULT_SESSION) return -1;
-    if (b.sessionKey === DEFAULT_SESSION) return 1;
-    const ta = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
-    const tb = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
-    return tb - ta;
-  });
-  if (!sessionSearchQuery.trim()) return sorted;
-  const q = sessionSearchQuery.toLowerCase();
-  return sorted.filter(s => 
-    s.sessionKey === DEFAULT_SESSION || // always show whisper-voice
-    getSessionLabel(s).toLowerCase().includes(q) ||
-    s.sessionKey.toLowerCase().includes(q) ||
-    (s.lastMessage || '').toLowerCase().includes(q)
-  );
-}
-
-function getSessionLabel(s: Session): string {
-  if (s.label) return s.label;
-  // Try to make sessionKey human-readable
-  const key = s.sessionKey;
-  // Remove common prefixes
-  return key.replace(/^agent:main:/, '').replace(/:/g, ' › ');
-}
 
 // --- Render ---
 function render() {
@@ -247,32 +156,6 @@ function render() {
       <h1>🎙️ OpenClaw Whisper</h1>
       <div class="subtitle">Voice chat powered by Whisper STT + OpenAI TTS</div>
     </header>
-    <div class="session-bar">
-      <button class="session-toggle-btn" id="sessionToggleBtn">
-        📋 ${getSessionLabel({ sessionKey: selectedSessionKey })}
-        <span class="caret">▾</span>
-      </button>
-    </div>
-    ${showSessionPanel ? `
-    <div class="session-panel" id="sessionPanel">
-      <div class="session-panel-header">
-        <span>Sessions</span>
-        <button class="session-refresh-btn" id="sessionRefreshBtn">🔄</button>
-      </div>
-      <div class="session-search">
-        <input type="text" id="sessionSearchInput" placeholder="Search sessions..." value="${escapeAttr(sessionSearchQuery)}" autocomplete="off" />
-      </div>
-      <div class="session-list">
-        ${sessionsLoading ? '<div class="session-loading"><div class="spinner"></div> Loading...</div>' : ''}
-        ${getFilteredSessions().map(s => `
-          <button class="session-item ${selectedSessionKey === s.sessionKey ? 'active' : ''}" data-key="${escapeAttr(s.sessionKey)}">
-            <div class="session-item-label">${escapeHtml(getSessionLabel(s))}</div>
-            ${s.lastMessage ? `<div class="session-item-preview">${escapeHtml(s.lastMessage.slice(0, 60))}</div>` : ''}
-          </button>
-        `).join('')}
-      </div>
-    </div>
-    ` : ''}
     <div class="status-bar">
       <div class="status-dot ${ws && ws.readyState === WebSocket.OPEN ? 'connected' : ''}"></div>
       <span>${ws && ws.readyState === WebSocket.OPEN ? 'Connected to OpenClaw' : 'Disconnected'}</span>
@@ -388,17 +271,11 @@ function escapeHtml(text: string): string {
   return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function escapeAttr(text: string | undefined | null): string {
-  return String(text || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 function bindEvents() {
   const pttBtn = document.getElementById('pttBtn')!;
   const voiceSelect = document.getElementById('voiceSelect') as HTMLSelectElement;
   const autoPlayBtn = document.getElementById('autoPlayBtn')!;
   const resetBtn = document.getElementById('resetBtn');
-  const sessionToggleBtn = document.getElementById('sessionToggleBtn');
-  const sessionRefreshBtn = document.getElementById('sessionRefreshBtn');
 
   // Tap to toggle recording
   const toggleRec = (e: Event) => {
@@ -430,36 +307,6 @@ function bindEvents() {
       keys.forEach(k => localStorage.removeItem(k));
       location.reload();
     }
-  });
-
-  // Session panel toggle
-  sessionToggleBtn?.addEventListener('click', () => {
-    showSessionPanel = !showSessionPanel;
-    if (!showSessionPanel) sessionSearchQuery = '';
-    if (showSessionPanel && sessions.length === 0) loadSessions();
-    else render();
-  });
-
-  sessionRefreshBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    loadSessions();
-  });
-
-  const sessionSearchInput = document.getElementById('sessionSearchInput') as HTMLInputElement;
-  sessionSearchInput?.addEventListener('input', () => {
-    sessionSearchQuery = sessionSearchInput.value;
-    render();
-    // Refocus and restore cursor after render
-    const input = document.getElementById('sessionSearchInput') as HTMLInputElement;
-    if (input) { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; }
-  });
-
-  // Session item clicks
-  document.querySelectorAll('.session-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const key = (el as HTMLElement).dataset.key || DEFAULT_SESSION;
-      selectSession(key);
-    });
   });
 }
 
@@ -493,8 +340,6 @@ function getSupportedMimeType(): string {
 
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    // Keep recording for 500ms of silence buffer before stopping
-    // This helps Whisper detect the end of speech cleanly
     isRecording = false;
     soundRecordStop();
     render();
@@ -545,13 +390,10 @@ async function handleRecordingPipeline(blob: Blob) {
     render();
 
     // 2. Send to OpenClaw
-    const sendBody: any = { message: userText };
-    if (selectedSessionKey) sendBody.sessionKey = selectedSessionKey;
-
     const chatRes = await fetch(`${BASE}api/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sendBody),
+      body: JSON.stringify({ message: userText }),
     });
 
     if (!chatRes.ok) throw new Error(`Chat failed: ${chatRes.statusText}`);
@@ -679,7 +521,6 @@ async function handleAsyncResult(msg: any) {
     if (ttsRes.ok) {
       const audioBlob = await ttsRes.blob();
       audioUrl = URL.createObjectURL(audioBlob);
-      // Audio will be auto-played via the rendered <audio> element below
     }
   } catch {}
 
@@ -719,11 +560,6 @@ if (savedMessages.length > 0) {
 
 connectWs();
 render();
-
-// Only load history from server if we have no persisted messages
-if (savedMessages.length === 0) {
-  selectSession(DEFAULT_SESSION);
-}
 
 // Resume listening for pending tasks
 function resumePendingTasks() {
