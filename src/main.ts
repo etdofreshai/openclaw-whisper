@@ -259,6 +259,7 @@ function render() {
         // Re-embed since ttsPlayingMsgIdx changed
         const slot = conv.querySelector(`.audio-slot[data-msg-idx="${i}"]`);
         if (slot) { slot.innerHTML = ''; slot.appendChild(a); }
+        conv.scrollTop = conv.scrollHeight;
         break;
       }
     }
@@ -484,6 +485,8 @@ async function handleRecordingPipeline(blob: Blob) {
     const slot = conv?.querySelector(`.audio-slot[data-msg-idx="${lastMsgIdx}"]`);
     if (slot) { slot.innerHTML = ''; slot.appendChild(a); }
     a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
+    // Scroll to bottom after embedding
+    if (conv) conv.scrollTop = conv.scrollHeight;
   }
 }
 
