@@ -157,8 +157,9 @@ async function processRecording() {
       return;
     }
 
-    // Add user message
-    messages.push({ role: 'user', text: userText, timestamp: Date.now() });
+    // Add user message with recorded audio
+    const userAudioUrl = URL.createObjectURL(blob);
+    messages.push({ role: 'user', text: userText, audioUrl: userAudioUrl, timestamp: Date.now() });
     render();
 
     // 2. Send to OpenClaw
