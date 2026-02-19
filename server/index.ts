@@ -50,7 +50,9 @@ function broadcastToClients(msg: any) {
 function connectToGateway(): void {
   if (isConnecting || (gatewayWs && gatewayWs.readyState === WebSocket.OPEN)) return;
   isConnecting = true;
-  console.log('Connecting to OpenClaw gateway...');
+  console.log(`Connecting to OpenClaw gateway at ${GATEWAY_URL}...`);
+  console.log(`  GATEWAY_TOKEN: ${GATEWAY_TOKEN ? `${GATEWAY_TOKEN.slice(0, 4)}...${GATEWAY_TOKEN.slice(-4)}` : '(not set)'}`);
+  console.log(`  OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? 'set' : '(not set)'}`);
 
   try {
     gatewayWs = new WebSocket(GATEWAY_URL, { headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` } });
