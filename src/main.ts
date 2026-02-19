@@ -287,7 +287,16 @@ function getSupportedMimeType(): string {
 
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
+    // Keep recording for 500ms of silence buffer before stopping
+    // This helps Whisper detect the end of speech cleanly
+    isRecording = false;
+    render();
+    setTimeout(() => {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+    }, 500);
+    return;
   }
   isRecording = false;
   render();
