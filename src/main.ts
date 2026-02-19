@@ -208,7 +208,7 @@ function bindEvents() {
   const pttBtn = document.getElementById('pttBtn')!;
   const voiceSelect = document.getElementById('voiceSelect') as HTMLSelectElement;
   const autoPlayBtn = document.getElementById('autoPlayBtn')!;
-  const resetBtn = document.getElementById('resetBtn')!;
+  const resetBtn = document.getElementById('resetBtn');
   const sessionToggleBtn = document.getElementById('sessionToggleBtn');
   const sessionRefreshBtn = document.getElementById('sessionRefreshBtn');
 
@@ -225,7 +225,7 @@ function bindEvents() {
 
   voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; localStorage.setItem('openclaw-whisper-voice', selectedVoice); });
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
-  resetBtn.addEventListener('click', resetSession);
+  resetBtn?.addEventListener('click', resetSession);
 
   // Session panel toggle
   sessionToggleBtn?.addEventListener('click', () => {
