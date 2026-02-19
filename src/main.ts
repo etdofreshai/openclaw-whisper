@@ -61,7 +61,7 @@ async function selectSession(sessionKey: string | null) {
         const hist = Array.isArray(data) ? data : (data.messages || []);
         messages = hist.map((m: any) => ({
           role: m.role === 'user' || m.sender === 'user' ? 'user' as const : 'assistant' as const,
-          text: m.text || m.content || m.message || '',
+          text: extractText(m.text || m.content || m.message || ''),
           timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
         }));
       }
@@ -161,8 +161,15 @@ function render() {
   bindEvents();
 }
 
+function extractText(content: any): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map((c: any) => c.type === 'text' ? c.text : '').filter(Boolean).join('\n');
+  if (content && typeof content === 'object' && content.text) return content.text;
+  return '';
+}
+
 function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function escapeAttr(text: string): string {
@@ -413,7 +420,7 @@ render();
       if (hist.length > 0 && messages.length === 0 && !selectedSessionKey) {
         messages = hist.map((m: any) => ({
           role: m.role === 'user' || m.sender === 'user' ? 'user' as const : 'assistant' as const,
-          text: m.text || m.content || m.message || '',
+          text: extractText(m.text || m.content || m.message || ''),
           timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
         }));
         render();
