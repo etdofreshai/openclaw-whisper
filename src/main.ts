@@ -213,8 +213,15 @@ function render() {
         if (m.role === 'assistant' && !m.audioPlayed) {
           m.audioPlayed = true;
           const audioEl = audioEls[audioIdx] as HTMLAudioElement;
-          audioEl.playbackRate = playbackSpeed;
-          audioEl.play().catch(() => {});
+          const tryPlay = () => {
+            audioEl.playbackRate = playbackSpeed;
+            audioEl.play().catch(() => {});
+          };
+          if (audioEl.readyState >= 3) {
+            tryPlay();
+          } else {
+            audioEl.addEventListener('canplay', tryPlay, { once: true });
+          }
           break;
         }
         audioIdx++;
@@ -409,8 +416,9 @@ async function handleRecordingPipeline(blob: Blob) {
       console.warn('TTS failed:', e);
     }
 
-    // Add assistant message (autoplay handled by render)
+    // Play chime, then add message after a short delay so chime finishes before TTS
     soundResponseReceived();
+    await new Promise(r => setTimeout(r, 400));
     messages.push({ role: 'assistant', text: resultText, audioUrl, timestamp: Date.now() });
   } catch (err: any) {
     console.error('Process error:', err);
