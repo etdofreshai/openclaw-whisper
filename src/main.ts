@@ -30,6 +30,7 @@ let sessions: Session[] = [];
 let selectedSessionKey: string | null = null; // null = default whisper session
 let sessionsLoading = false;
 let showSessionPanel = false;
+let sessionSearchQuery = '';
 
 // --- Sessions ---
 async function loadSessions() {
@@ -79,6 +80,21 @@ async function selectSession(sessionKey: string | null) {
   render();
 }
 
+function getFilteredSessions(): Session[] {
+  const sorted = [...sessions].sort((a, b) => {
+    const ta = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+    const tb = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+    return tb - ta;
+  });
+  if (!sessionSearchQuery.trim()) return sorted;
+  const q = sessionSearchQuery.toLowerCase();
+  return sorted.filter(s => 
+    getSessionLabel(s).toLowerCase().includes(q) ||
+    s.sessionKey.toLowerCase().includes(q) ||
+    (s.lastMessage || '').toLowerCase().includes(q)
+  );
+}
+
 function getSessionLabel(s: Session): string {
   if (s.label) return s.label;
   // Try to make sessionKey human-readable
@@ -107,12 +123,15 @@ function render() {
         <span>Sessions</span>
         <button class="session-refresh-btn" id="sessionRefreshBtn">🔄</button>
       </div>
+      <div class="session-search">
+        <input type="text" id="sessionSearchInput" placeholder="Search sessions..." value="${escapeAttr(sessionSearchQuery)}" autocomplete="off" />
+      </div>
       <div class="session-list">
         <button class="session-item ${selectedSessionKey === null ? 'active' : ''}" data-key="">
           🎙️ Default (Whisper Voice)
         </button>
         ${sessionsLoading ? '<div class="session-loading"><div class="spinner"></div> Loading...</div>' : ''}
-        ${sessions.map(s => `
+        ${getFilteredSessions().map(s => `
           <button class="session-item ${selectedSessionKey === s.sessionKey ? 'active' : ''}" data-key="${escapeAttr(s.sessionKey)}">
             <div class="session-item-label">${escapeHtml(getSessionLabel(s))}</div>
             ${s.lastMessage ? `<div class="session-item-preview">${escapeHtml(s.lastMessage.slice(0, 60))}</div>` : ''}
@@ -208,6 +227,7 @@ function bindEvents() {
   // Session panel toggle
   sessionToggleBtn?.addEventListener('click', () => {
     showSessionPanel = !showSessionPanel;
+    if (!showSessionPanel) sessionSearchQuery = '';
     if (showSessionPanel && sessions.length === 0) loadSessions();
     else render();
   });
@@ -215,6 +235,15 @@ function bindEvents() {
   sessionRefreshBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
     loadSessions();
+  });
+
+  const sessionSearchInput = document.getElementById('sessionSearchInput') as HTMLInputElement;
+  sessionSearchInput?.addEventListener('input', () => {
+    sessionSearchQuery = sessionSearchInput.value;
+    render();
+    // Refocus and restore cursor after render
+    const input = document.getElementById('sessionSearchInput') as HTMLInputElement;
+    if (input) { input.focus(); input.selectionStart = input.selectionEnd = input.value.length; }
   });
 
   // Session item clicks

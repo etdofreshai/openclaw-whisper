@@ -113,6 +113,29 @@ header .subtitle {
 
 .session-refresh-btn:hover { background: var(--overlay); }
 
+.session-search {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--overlay);
+  position: sticky;
+  top: 32px;
+  background: var(--surface);
+}
+
+.session-search input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--overlay);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.session-search input:focus {
+  border-color: var(--blue);
+}
+
 .session-list {
   display: flex;
   flex-direction: column;
