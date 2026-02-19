@@ -7,6 +7,7 @@ interface Message {
   text: string;
   audioUrl?: string;
   timestamp: number;
+  audioPlayed?: boolean;
 }
 
 interface Session {
@@ -154,7 +155,7 @@ function render() {
       ${messages.map(m => `
         <div class="message ${m.role}">
           <div class="bubble">${escapeHtml(m.text)}</div>
-          ${m.audioUrl ? `<audio controls src="${m.audioUrl}" preload="none"></audio>` : ''}
+          ${m.audioUrl ? `<audio controls src="${m.audioUrl}" preload="auto"></audio>` : ''}
           <div class="meta">${new Date(m.timestamp).toLocaleTimeString()}</div>
         </div>
       `).join('')}
@@ -194,6 +195,19 @@ function render() {
 
   // Bind events
   bindEvents();
+
+  // Set playback speed on all audio elements and auto-play the latest assistant audio
+  const audioEls = conv.querySelectorAll('audio');
+  audioEls.forEach(a => { a.playbackRate = playbackSpeed; });
+  if (autoPlayTTS && audioEls.length > 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && lastMsg.role === 'assistant' && lastMsg.audioUrl && !lastMsg.audioPlayed) {
+      lastMsg.audioPlayed = true;
+      const lastAudio = audioEls[audioEls.length - 1] as HTMLAudioElement;
+      lastAudio.playbackRate = playbackSpeed;
+      lastAudio.play().catch(() => {});
+    }
+  }
 }
 
 function extractText(content: any): string {
@@ -366,11 +380,7 @@ async function processRecording() {
       if (ttsRes.ok) {
         const audioBlob = await ttsRes.blob();
         audioUrl = URL.createObjectURL(audioBlob);
-        if (autoPlayTTS) {
-          const audio = new Audio(audioUrl);
-          audio.playbackRate = playbackSpeed;
-          audio.play().catch(() => {});
-        }
+        // Audio will be auto-played via the rendered <audio> element below
       }
     } catch (e) {
       console.warn('TTS failed:', e);
@@ -450,7 +460,7 @@ async function handleAsyncResult(msg: any) {
     if (ttsRes.ok) {
       const audioBlob = await ttsRes.blob();
       audioUrl = URL.createObjectURL(audioBlob);
-      if (autoPlayTTS) { const a = new Audio(audioUrl); a.playbackRate = playbackSpeed; a.play().catch(() => {}); }
+      // Audio will be auto-played via the rendered <audio> element below
     }
   } catch {}
 
