@@ -91,7 +91,7 @@ function handleGatewayMessage(message: any): void {
         type: 'req', id: `connect_${Date.now()}`, method: 'connect',
         params: {
           minProtocol: 3, maxProtocol: 3,
-          client: { id: 'gateway-client', version: '1.0.0', platform: 'linux', mode: 'operator' },
+          client: { id: 'gateway-client', version: '1.0.0', platform: 'linux', mode: 'backend' },
           role: 'operator', scopes: ['operator.read', 'operator.write', 'operator.admin'],
           caps: [],
           auth: { token: GATEWAY_TOKEN }
