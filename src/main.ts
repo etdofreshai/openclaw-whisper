@@ -9,6 +9,13 @@ interface Message {
   timestamp: number;
 }
 
+interface Session {
+  sessionKey: string;
+  label?: string;
+  lastMessage?: string;
+  lastActivity?: string;
+}
+
 // --- State ---
 let messages: Message[] = [];
 let isRecording = false;
@@ -19,6 +26,60 @@ let ws: WebSocket | null = null;
 let isProcessing = false;
 let selectedVoice = 'coral';
 let autoPlayTTS = true;
+let sessions: Session[] = [];
+let selectedSessionKey: string | null = null; // null = default whisper session
+let sessionsLoading = false;
+let showSessionPanel = false;
+
+// --- Sessions ---
+async function loadSessions() {
+  sessionsLoading = true;
+  render();
+  try {
+    const res = await fetch(`${BASE}api/sessions`);
+    if (res.ok) {
+      const data = await res.json();
+      sessions = Array.isArray(data) ? data : (data.sessions || []);
+    }
+  } catch (e) {
+    console.error('Failed to load sessions:', e);
+  }
+  sessionsLoading = false;
+  render();
+}
+
+async function selectSession(sessionKey: string | null) {
+  selectedSessionKey = sessionKey;
+  messages = [];
+  render();
+
+  if (sessionKey) {
+    try {
+      const res = await fetch(`${BASE}api/sessions/${encodeURIComponent(sessionKey)}/history`);
+      if (res.ok) {
+        const data = await res.json();
+        const hist = Array.isArray(data) ? data : (data.messages || []);
+        messages = hist.map((m: any) => ({
+          role: m.role === 'user' || m.sender === 'user' ? 'user' as const : 'assistant' as const,
+          text: m.text || m.content || m.message || '',
+          timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now(),
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to load history:', e);
+    }
+  }
+  showSessionPanel = false;
+  render();
+}
+
+function getSessionLabel(s: Session): string {
+  if (s.label) return s.label;
+  // Try to make sessionKey human-readable
+  const key = s.sessionKey;
+  // Remove common prefixes
+  return key.replace(/^agent:main:/, '').replace(/:/g, ' › ');
+}
 
 // --- Render ---
 function render() {
@@ -28,6 +89,32 @@ function render() {
       <h1>🎙️ OpenClaw Whisper</h1>
       <div class="subtitle">Voice chat powered by Whisper STT + OpenAI TTS</div>
     </header>
+    <div class="session-bar">
+      <button class="session-toggle-btn" id="sessionToggleBtn">
+        📋 ${selectedSessionKey ? getSessionLabel({ sessionKey: selectedSessionKey }) : 'Default Session'}
+        <span class="caret">▾</span>
+      </button>
+    </div>
+    ${showSessionPanel ? `
+    <div class="session-panel" id="sessionPanel">
+      <div class="session-panel-header">
+        <span>Sessions</span>
+        <button class="session-refresh-btn" id="sessionRefreshBtn">🔄</button>
+      </div>
+      <div class="session-list">
+        <button class="session-item ${selectedSessionKey === null ? 'active' : ''}" data-key="">
+          🎙️ Default (Whisper Voice)
+        </button>
+        ${sessionsLoading ? '<div class="session-loading"><div class="spinner"></div> Loading...</div>' : ''}
+        ${sessions.map(s => `
+          <button class="session-item ${selectedSessionKey === s.sessionKey ? 'active' : ''}" data-key="${escapeAttr(s.sessionKey)}">
+            <div class="session-item-label">${escapeHtml(getSessionLabel(s))}</div>
+            ${s.lastMessage ? `<div class="session-item-preview">${escapeHtml(s.lastMessage.slice(0, 60))}</div>` : ''}
+          </button>
+        `).join('')}
+      </div>
+    </div>
+    ` : ''}
     <div class="status-bar">
       <div class="status-dot ${ws && ws.readyState === WebSocket.OPEN ? 'connected' : ''}"></div>
       <span>${ws && ws.readyState === WebSocket.OPEN ? 'Connected to OpenClaw' : 'Disconnected'}</span>
@@ -78,11 +165,17 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function escapeAttr(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function bindEvents() {
   const pttBtn = document.getElementById('pttBtn')!;
   const voiceSelect = document.getElementById('voiceSelect') as HTMLSelectElement;
   const autoPlayBtn = document.getElementById('autoPlayBtn')!;
   const resetBtn = document.getElementById('resetBtn')!;
+  const sessionToggleBtn = document.getElementById('sessionToggleBtn');
+  const sessionRefreshBtn = document.getElementById('sessionRefreshBtn');
 
   // Tap to toggle recording
   const toggleRec = (e: Event) => {
@@ -98,6 +191,26 @@ function bindEvents() {
   voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; });
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; render(); });
   resetBtn.addEventListener('click', resetSession);
+
+  // Session panel toggle
+  sessionToggleBtn?.addEventListener('click', () => {
+    showSessionPanel = !showSessionPanel;
+    if (showSessionPanel && sessions.length === 0) loadSessions();
+    else render();
+  });
+
+  sessionRefreshBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    loadSessions();
+  });
+
+  // Session item clicks
+  document.querySelectorAll('.session-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = (el as HTMLElement).dataset.key || '';
+      selectSession(key || null);
+    });
+  });
 }
 
 // --- Recording ---
@@ -162,11 +275,14 @@ async function processRecording() {
     messages.push({ role: 'user', text: userText, audioUrl: userAudioUrl, timestamp: Date.now() });
     render();
 
-    // 2. Send to OpenClaw
+    // 2. Send to OpenClaw (include sessionKey if selected)
+    const sendBody: any = { message: userText };
+    if (selectedSessionKey) sendBody.sessionKey = selectedSessionKey;
+
     const chatRes = await fetch(`${BASE}api/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: userText }),
+      body: JSON.stringify(sendBody),
     });
 
     if (!chatRes.ok) throw new Error(`Chat failed: ${chatRes.statusText}`);
@@ -231,7 +347,6 @@ function waitForResult(taskId: string): Promise<string> {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.addEventListener('message', handler);
     } else {
-      // Fallback: poll or just wait
       reject(new Error('WebSocket not connected'));
     }
   });
@@ -253,7 +368,6 @@ function connectWs() {
     try {
       const msg = JSON.parse(event.data);
       if (msg.type === 'result' && !isProcessing) {
-        // Async result (not from a current request)
         handleAsyncResult(msg);
       }
     } catch {}

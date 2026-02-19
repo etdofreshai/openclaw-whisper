@@ -267,7 +267,7 @@ app.post('/api/chat', async (req, res) => {
 // Send message to OpenClaw (async, result comes via WebSocket)
 app.post('/api/send', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, sessionKey: targetSessionKey } = req.body;
     if (!message) return res.status(400).json({ error: 'No message' });
     if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) {
       return res.status(503).json({ error: 'Gateway not connected' });
@@ -277,11 +277,18 @@ app.post('/api/send', async (req, res) => {
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     activeRuns.set(requestId, { taskId, text: '' });
 
-    // Send to gateway, don't wait for result
-    gatewayWs.send(JSON.stringify({
-      type: 'req', id: requestId, method: 'chat.send',
-      params: { sessionKey: getSessionKey(), message, idempotencyKey: requestId }
-    }));
+    // If a specific session key is provided, use sessions.send; otherwise use chat.send with default
+    if (targetSessionKey) {
+      gatewayWs.send(JSON.stringify({
+        type: 'req', id: requestId, method: 'sessions.send',
+        params: { sessionKey: targetSessionKey, message, idempotencyKey: requestId }
+      }));
+    } else {
+      gatewayWs.send(JSON.stringify({
+        type: 'req', id: requestId, method: 'chat.send',
+        params: { sessionKey: getSessionKey(), message, idempotencyKey: requestId }
+      }));
+    }
 
     // Handle the initial response
     const timeout = setTimeout(() => {
@@ -296,6 +303,51 @@ app.post('/api/send', async (req, res) => {
     res.json({ taskId });
   } catch (err: any) {
     console.error('Send error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Sessions list
+app.get('/api/sessions', async (_req, res) => {
+  try {
+    if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) {
+      return res.status(503).json({ error: 'Gateway not connected' });
+    }
+    const requestId = generateRequestId();
+    const result = await new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => { pendingRequests.delete(requestId); reject(new Error('Timeout')); }, 15000);
+      pendingRequests.set(requestId, { resolve, reject, timeout });
+      gatewayWs!.send(JSON.stringify({
+        type: 'req', id: requestId, method: 'sessions.list',
+        params: { limit: 50, messageLimit: 1 }
+      }));
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error('Sessions list error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Session history
+app.get('/api/sessions/:sessionKey/history', async (req, res) => {
+  try {
+    if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) {
+      return res.status(503).json({ error: 'Gateway not connected' });
+    }
+    const { sessionKey } = req.params;
+    const requestId = generateRequestId();
+    const result = await new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => { pendingRequests.delete(requestId); reject(new Error('Timeout')); }, 15000);
+      pendingRequests.set(requestId, { resolve, reject, timeout });
+      gatewayWs!.send(JSON.stringify({
+        type: 'req', id: requestId, method: 'sessions.history',
+        params: { sessionKey, limit: 50 }
+      }));
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error('Session history error:', err);
     res.status(500).json({ error: err.message });
   }
 });
