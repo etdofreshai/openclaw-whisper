@@ -35,11 +35,15 @@ let autoPlayTTS = localStorage.getItem('openclaw-whisper-autoplay') !== 'false';
 let playbackSpeed = parseFloat(localStorage.getItem('openclaw-whisper-speed') || '1');
 
 // Persistent audio element for TTS playback (unlocked on user gesture)
+// This element gets embedded into the DOM as the visible player
 let ttsAudio: HTMLAudioElement | null = null;
+let ttsPlayingMsgIdx: number = -1; // which message index is currently using ttsAudio
 function ensureTtsAudio(): HTMLAudioElement {
   if (!ttsAudio) {
     ttsAudio = new Audio();
+    ttsAudio.controls = true;
     ttsAudio.volume = 1;
+    ttsAudio.preload = 'auto';
   }
   return ttsAudio;
 }
@@ -47,8 +51,9 @@ function ensureTtsAudio(): HTMLAudioElement {
 function unlockAudio() {
   const a = ensureTtsAudio();
   // Play a silent buffer to unlock
+  const wasSrc = a.src;
   a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-  a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
+  a.play().then(() => { a.pause(); a.currentTime = 0; if (wasSrc) a.src = wasSrc; }).catch(() => {});
 }
 let sessions: Session[] = [];
 const DEFAULT_SESSION = 'whisper-voice:ET';
@@ -174,10 +179,10 @@ function render() {
     </div>
     <div class="conversation" id="conversation">
       ${messages.length === 0 ? '<div class="empty-state">Tap the mic to start recording, tap again to send</div>' : ''}
-      ${messages.map(m => `
+      ${messages.map((m, i) => `
         <div class="message ${m.role}">
           <div class="bubble">${marked.parse(m.text)}</div>
-          ${m.audioUrl ? `<audio controls src="${m.audioUrl}" preload="auto"></audio>` : ''}
+          ${m.audioUrl ? `<div class="audio-slot" data-msg-idx="${i}"></div>` : ''}
           <div class="meta">${new Date(m.timestamp).toLocaleTimeString()}</div>
         </div>
       `).join('')}
@@ -218,19 +223,42 @@ function render() {
   // Bind events
   bindEvents();
 
-  // Set playback speed on all audio elements and auto-play pending assistant audio
-  const audioEls = conv.querySelectorAll('audio');
-  audioEls.forEach(a => { a.playbackRate = playbackSpeed; });
+  // Embed audio elements into slots
+  const audioSlots = conv.querySelectorAll('.audio-slot');
+  audioSlots.forEach(slot => {
+    const idx = parseInt((slot as HTMLElement).dataset.msgIdx || '-1');
+    if (idx < 0 || idx >= messages.length) return;
+    const m = messages[idx];
+    if (!m.audioUrl) return;
+
+    if (idx === ttsPlayingMsgIdx) {
+      // Embed the persistent ttsAudio element here
+      slot.appendChild(ensureTtsAudio());
+    } else {
+      // Regular audio element for user recordings / old messages
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.src = m.audioUrl;
+      audio.preload = 'auto';
+      audio.playbackRate = playbackSpeed;
+      slot.appendChild(audio);
+    }
+  });
+
+  // Auto-play pending assistant audio via persistent element
   if (autoPlayTTS && !isRecording) {
-    // Find the first unplayed assistant message and play it via persistent audio
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i];
       if (m.role === 'assistant' && m.audioUrl && !m.audioPlayed) {
         m.audioPlayed = true;
+        ttsPlayingMsgIdx = i;
         const a = ensureTtsAudio();
         a.src = m.audioUrl;
         a.playbackRate = playbackSpeed;
         a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
+        // Re-embed since ttsPlayingMsgIdx changed
+        const slot = conv.querySelector(`.audio-slot[data-msg-idx="${i}"]`);
+        if (slot) { slot.innerHTML = ''; slot.appendChild(a); }
         break;
       }
     }
@@ -444,11 +472,17 @@ async function handleRecordingPipeline(blob: Blob) {
   render();
 
   // Directly autoplay the TTS using the persistent (unlocked) audio element
-  const lastMsg = messages[messages.length - 1];
+  const lastMsgIdx = messages.length - 1;
+  const lastMsg = messages[lastMsgIdx];
   if (autoPlayTTS && !isRecording && lastMsg?.audioUrl && lastMsg.role === 'assistant') {
+    ttsPlayingMsgIdx = lastMsgIdx;
     const a = ensureTtsAudio();
     a.src = lastMsg.audioUrl;
     a.playbackRate = playbackSpeed;
+    // Embed into the correct slot
+    const conv = document.getElementById('conversation');
+    const slot = conv?.querySelector(`.audio-slot[data-msg-idx="${lastMsgIdx}"]`);
+    if (slot) { slot.innerHTML = ''; slot.appendChild(a); }
     a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
   }
 }
