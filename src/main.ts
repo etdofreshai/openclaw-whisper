@@ -33,7 +33,7 @@ function render() {
       <span>${ws && ws.readyState === WebSocket.OPEN ? 'Connected to OpenClaw' : 'Disconnected'}</span>
     </div>
     <div class="conversation" id="conversation">
-      ${messages.length === 0 ? '<div class="empty-state">Hold the mic button and speak to start a conversation</div>' : ''}
+      ${messages.length === 0 ? '<div class="empty-state">Tap the mic to start recording, tap again to send</div>' : ''}
       ${messages.map(m => `
         <div class="message ${m.role}">
           <div class="bubble">${escapeHtml(m.text)}</div>
@@ -84,16 +84,16 @@ function bindEvents() {
   const autoPlayBtn = document.getElementById('autoPlayBtn')!;
   const resetBtn = document.getElementById('resetBtn')!;
 
-  // Push-to-talk: hold to record
-  const startRec = (e: Event) => { e.preventDefault(); if (!isProcessing) startRecording(); };
-  const stopRec = (e: Event) => { e.preventDefault(); if (isRecording) stopRecording(); };
+  // Tap to toggle recording
+  const toggleRec = (e: Event) => {
+    e.preventDefault();
+    if (isProcessing) return;
+    if (isRecording) stopRecording();
+    else startRecording();
+  };
 
-  pttBtn.addEventListener('mousedown', startRec);
-  pttBtn.addEventListener('mouseup', stopRec);
-  pttBtn.addEventListener('mouseleave', stopRec);
-  pttBtn.addEventListener('touchstart', startRec);
-  pttBtn.addEventListener('touchend', stopRec);
-  pttBtn.addEventListener('touchcancel', stopRec);
+  pttBtn.addEventListener('click', toggleRec);
+  pttBtn.addEventListener('touchend', (e) => { e.preventDefault(); toggleRec(e); });
 
   voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; });
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; render(); });
@@ -288,16 +288,11 @@ async function resetSession() {
 connectWs();
 render();
 
-// Keyboard shortcut: hold Space to record
+// Keyboard shortcut: Space to toggle recording
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.repeat && !isRecording && !isProcessing && document.activeElement?.tagName !== 'SELECT') {
+  if (e.code === 'Space' && !e.repeat && !isProcessing && document.activeElement?.tagName !== 'SELECT') {
     e.preventDefault();
-    startRecording();
-  }
-});
-document.addEventListener('keyup', (e) => {
-  if (e.code === 'Space' && isRecording) {
-    e.preventDefault();
-    stopRecording();
+    if (isRecording) stopRecording();
+    else startRecording();
   }
 });
