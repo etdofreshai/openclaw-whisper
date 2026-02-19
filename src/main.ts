@@ -24,8 +24,9 @@ let recordingStartTime = 0;
 let audioChunks: Blob[] = [];
 let ws: WebSocket | null = null;
 let isProcessing = false;
-let selectedVoice = localStorage.getItem('openclaw-whisper-voice') || 'coral';
+let selectedVoice = localStorage.getItem('openclaw-whisper-voice') || 'nova';
 let autoPlayTTS = localStorage.getItem('openclaw-whisper-autoplay') !== 'false';
+let playbackSpeed = parseFloat(localStorage.getItem('openclaw-whisper-speed') || '1');
 let sessions: Session[] = [];
 const DEFAULT_SESSION = 'whisper-voice:ET';
 let selectedSessionKey: string = DEFAULT_SESSION;
@@ -176,6 +177,12 @@ function render() {
             `<option value="${v}" ${v === selectedVoice ? 'selected' : ''}>${v}</option>`
           ).join('')}
         </select>
+        <label>Speed:</label>
+        <select id="speedSelect">
+          ${['0.5','0.75','1','1.25','1.5','1.75','2'].map(s =>
+            `<option value="${s}" ${parseFloat(s) === playbackSpeed ? 'selected' : ''}>${s}x</option>`
+          ).join('')}
+        </select>
         <button class="btn ${autoPlayTTS ? 'active' : ''}" id="autoPlayBtn">🔊 Auto-play</button>
       </div>
     </div>
@@ -223,7 +230,10 @@ function bindEvents() {
   pttBtn.addEventListener('click', toggleRec);
   pttBtn.addEventListener('touchend', (e) => { e.preventDefault(); toggleRec(e); });
 
+  const speedSelect = document.getElementById('speedSelect') as HTMLSelectElement;
+
   voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; localStorage.setItem('openclaw-whisper-voice', selectedVoice); });
+  speedSelect.addEventListener('change', () => { playbackSpeed = parseFloat(speedSelect.value); localStorage.setItem('openclaw-whisper-speed', String(playbackSpeed)); });
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
   resetBtn?.addEventListener('click', resetSession);
 
@@ -358,6 +368,7 @@ async function processRecording() {
         audioUrl = URL.createObjectURL(audioBlob);
         if (autoPlayTTS) {
           const audio = new Audio(audioUrl);
+          audio.playbackRate = playbackSpeed;
           audio.play().catch(() => {});
         }
       }
@@ -439,7 +450,7 @@ async function handleAsyncResult(msg: any) {
     if (ttsRes.ok) {
       const audioBlob = await ttsRes.blob();
       audioUrl = URL.createObjectURL(audioBlob);
-      if (autoPlayTTS) new Audio(audioUrl).play().catch(() => {});
+      if (autoPlayTTS) { const a = new Audio(audioUrl); a.playbackRate = playbackSpeed; a.play().catch(() => {}); }
     }
   } catch {}
 
