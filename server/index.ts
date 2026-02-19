@@ -281,10 +281,12 @@ app.post('/api/send', async (req, res) => {
     activeRuns.set(requestId, { taskId, text: '' });
 
     const sessionKey = getSessionKey();
-    gatewayWs.send(JSON.stringify({
+    const payload = JSON.stringify({
       type: 'req', id: requestId, method: 'chat.send',
-      params: { sessionKey, message, idempotencyKey: requestId }
-    }));
+      params: { sessionKey, message, idempotencyKey: requestId, deliver: false }
+    });
+    console.log(`Sending chat.send: sessionKey=${sessionKey} requestId=${requestId}`);
+    gatewayWs.send(payload);
 
     // Handle the initial response
     const timeout = setTimeout(() => {
