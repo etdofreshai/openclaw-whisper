@@ -1,8 +1,10 @@
 import './style.css';
-import { marked } from 'marked';
+// Simple markdown-like rendering (no heavy parser)
 import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startTranscribingSound, stopTranscribingSound, startThinkingSound, stopThinkingSound, unlockAudioCtx } from './sounds';
 
-marked.setOptions({ breaks: true });
+function simpleMarkdown(text: string): string {
+  return escapeHtml(text).replace(/\n/g, '<br>');
+}
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -266,7 +268,7 @@ function render() {
       ${messages.length === 0 ? '<div class="empty-state">Tap the mic to start recording, tap again to send</div>' : ''}
       ${messages.map((m, i) => `
         <div class="message ${m.role}">
-          <div class="bubble">${marked.parse(String(m.text || ''))}</div>
+          <div class="bubble">${simpleMarkdown(String(m.text || ''))}</div>
           ${m.audioUrl ? `<div class="audio-slot" data-msg-idx="${i}"></div>` : ''}
           <div class="meta">${new Date(m.timestamp).toLocaleTimeString()}</div>
         </div>
