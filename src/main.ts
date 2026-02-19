@@ -397,14 +397,12 @@ async function handleRecordingPipeline(blob: Blob) {
     });
 
     if (!chatRes.ok) throw new Error(`Chat failed: ${chatRes.statusText}`);
-    const { taskId } = await chatRes.json();
-    addPendingTask(taskId);
     soundSendSuccess();
     startThinkingSound();
 
-    // 3. Wait for result via WebSocket
-    const resultText = await waitForResult(taskId);
-    removePendingTask(taskId);
+    // 3. Get response (synchronous HTTP)
+    const chatData = await chatRes.json();
+    const resultText = chatData.text || chatData.choices?.[0]?.message?.content || 'No response';
     stopThinkingSound();
 
     // 4. Get TTS audio

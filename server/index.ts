@@ -268,38 +268,43 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// Send message to OpenClaw (async, result comes via WebSocket)
+// Send message to OpenClaw via HTTP chat completions endpoint
 app.post('/api/send', async (req, res) => {
   try {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: 'No message' });
-    if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) {
-      return res.status(503).json({ error: 'Gateway not connected' });
-    }
-
-    const requestId = generateRequestId();
-    const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    activeRuns.set(requestId, { taskId, text: '' });
 
     const sessionKey = getSessionKey();
-    const payload = JSON.stringify({
-      type: 'req', id: requestId, method: 'chat.send',
-      params: { sessionKey, message, idempotencyKey: requestId, deliver: false }
-    });
-    console.log(`Sending chat.send: sessionKey=${sessionKey} requestId=${requestId}`);
-    gatewayWs.send(payload);
+    const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
+      .replace('wss://', 'https://').replace('ws://', 'http://');
 
-    // Handle the initial response
-    const timeout = setTimeout(() => {
-      pendingRequests.delete(requestId);
-    }, 120000);
-    pendingRequests.set(requestId, {
-      resolve: () => {},
-      reject: () => {},
-      timeout,
+    console.log(`Sending via HTTP: sessionKey=${sessionKey} url=${gatewayHttpUrl}/v1/chat/completions`);
+
+    const response = await fetch(`${gatewayHttpUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+      },
+      body: JSON.stringify({
+        model: 'default',
+        messages: [{ role: 'user', content: message }],
+        stream: false,
+        metadata: { sessionKey },
+      }),
     });
 
-    res.json({ taskId });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`HTTP chat error: ${response.status} ${errText}`);
+      return res.status(response.status).json({ error: errText });
+    }
+
+    const data = await response.json() as any;
+    const assistantText = data.choices?.[0]?.message?.content || 'No response';
+    console.log(`Got response: ${assistantText.slice(0, 100)}...`);
+
+    res.json({ text: assistantText });
   } catch (err: any) {
     console.error('Send error:', err);
     res.status(500).json({ error: err.message });
