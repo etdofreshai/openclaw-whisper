@@ -317,11 +317,14 @@ app.get('/api/sessions', async (_req, res) => {
     const result = await new Promise<any>((resolve, reject) => {
       const timeout = setTimeout(() => { pendingRequests.delete(requestId); reject(new Error('Timeout')); }, 15000);
       pendingRequests.set(requestId, { resolve, reject, timeout });
-      gatewayWs!.send(JSON.stringify({
+      const msg = JSON.stringify({
         type: 'req', id: requestId, method: 'sessions.list',
         params: { limit: 50, messageLimit: 1 }
-      }));
+      });
+      console.log('Sending sessions.list:', msg);
+      gatewayWs!.send(msg);
     });
+    console.log('Sessions list result:', JSON.stringify(result).slice(0, 500));
     res.json(result);
   } catch (err: any) {
     console.error('Sessions list error:', err);
