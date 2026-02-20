@@ -31,33 +31,33 @@ function playTone(freq: number, duration: number, type: OscillatorType = 'sine',
 
 /** Short ascending boop — mic started */
 export function soundRecordStart() {
-  playTone(440, 0.08, 'sine', 0.12);
-  playTone(587, 0.08, 'sine', 0.12, 0.07);
+  playTone(440, 0.08, 'sine', 0.35);
+  playTone(587, 0.08, 'sine', 0.35, 0.07);
 }
 
 /** Short descending boop — mic stopped */
 export function soundRecordStop() {
-  playTone(587, 0.08, 'sine', 0.12);
-  playTone(440, 0.08, 'sine', 0.12, 0.07);
+  playTone(587, 0.08, 'sine', 0.35);
+  playTone(440, 0.08, 'sine', 0.35, 0.07);
 }
 
 /** Quick blip — sent successfully */
 export function soundSendSuccess() {
-  playTone(880, 0.06, 'sine', 0.1);
-  playTone(1047, 0.08, 'sine', 0.1, 0.06);
+  playTone(880, 0.06, 'sine', 0.3);
+  playTone(1047, 0.08, 'sine', 0.3, 0.06);
 }
 
 /** Positive chime — response received */
 export function soundResponseReceived() {
-  playTone(523, 0.1, 'sine', 0.12);
-  playTone(659, 0.1, 'sine', 0.12, 0.1);
-  playTone(784, 0.15, 'sine', 0.12, 0.2);
+  playTone(523, 0.1, 'sine', 0.35);
+  playTone(659, 0.1, 'sine', 0.35, 0.1);
+  playTone(784, 0.15, 'sine', 0.35, 0.2);
 }
 
 /** Error tone — request failed */
 export function soundError() {
-  playTone(330, 0.15, 'square', 0.1);
-  playTone(262, 0.25, 'square', 0.1, 0.15);
+  playTone(330, 0.15, 'square', 0.3);
+  playTone(262, 0.25, 'square', 0.3, 0.15);
 }
 
 // --- Transcribing loop (doot-doot pattern) ---
@@ -71,7 +71,7 @@ export function startTranscribingSound() {
 }
 
 function playTranscribingPattern() {
-  const vol = 0.04;
+  const vol = 0.12;
   const freq = 440; // A4
   playTone(freq, 0.06, 'sine', vol);
   playTone(freq, 0.06, 'sine', vol, 0.12);
@@ -99,7 +99,7 @@ export function startThinkingSound() {
 
 function playThinkingPattern() {
   // Triple beep: beep-beep-beep, silence, repeat
-  const vol = 0.04;
+  const vol = 0.12;
   const freq = 392; // G4
   playTone(freq, 0.06, 'sine', vol);
   playTone(freq, 0.06, 'sine', vol, 0.12);
