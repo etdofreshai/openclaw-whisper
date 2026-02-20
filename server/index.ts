@@ -285,12 +285,12 @@ app.post('/api/send', async (req, res) => {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+        'x-openclaw-session-key': sessionKey,
       },
       body: JSON.stringify({
         model: 'default',
         messages: [{ role: 'user', content: message }],
         stream: false,
-        metadata: { sessionKey },
       }),
     });
 
