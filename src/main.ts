@@ -1,6 +1,7 @@
 import './style.css';
 // Simple markdown-like rendering (no heavy parser)
-import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startTranscribingSound, stopTranscribingSound, startThinkingSound, stopThinkingSound, unlockAudioCtx } from './sounds';
+import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startTranscribingSound, stopTranscribingSound, startThinkingSound, stopThinkingSound, unlockAudioCtx, soundCalibrationBeep, soundVadSpeechStart, soundVadListening } from './sounds';
+import { VAD } from './vad';
 
 function simpleMarkdown(text: string): string {
   return escapeHtml(text).replace(/\n/g, '<br>');
@@ -45,6 +46,15 @@ let autoPlayTTS = localStorage.getItem('openclaw-whisper-autoplay') !== 'false';
 let playbackSpeed = parseFloat(localStorage.getItem('openclaw-whisper-speed') || '1');
 let volumeBoost = parseFloat(localStorage.getItem('openclaw-whisper-volume') || '100');
 
+// --- VAD (Voice Activity Detection) ---
+let vadMode = false;
+let vadCalibrating = false;
+let vadCalibrationStep = ''; // 'silence' | 'speak' | 'done'
+let vad: VAD | null = null;
+let vadLevel = 0;
+let vadThreshold = 0;
+let ttsPlaying = false; // track when TTS is playing to pause VAD
+
 // Web Audio gain node for volume boost beyond 100%
 let gainNode: GainNode | null = null;
 let mediaSource: MediaElementAudioSourceNode | null = null;
@@ -76,6 +86,10 @@ function ensureTtsAudio(): HTMLAudioElement {
     ttsAudio.controls = true;
     ttsAudio.volume = 1;
     ttsAudio.preload = 'auto';
+    // Pause VAD while TTS is playing to avoid picking up speaker output
+    ttsAudio.addEventListener('play', () => { ttsPlaying = true; if (vad) vad.pause(); });
+    ttsAudio.addEventListener('pause', () => { ttsPlaying = false; if (vad) { vad.resume(); soundVadListening(); } });
+    ttsAudio.addEventListener('ended', () => { ttsPlaying = false; if (vad) { vad.resume(); soundVadListening(); } });
   }
   return ttsAudio;
 }
@@ -118,11 +132,21 @@ function render() {
     </div>
     <div class="controls">
       <div class="controls-row">
-        <button class="ptt-btn ${isRecording ? 'recording' : ''}" id="pttBtn" ${recordingCooldown ? 'disabled' : ''}>
+        <button class="ptt-btn ${isRecording ? 'recording' : ''}" id="pttBtn" ${recordingCooldown || vadMode ? 'disabled' : ''}>
           ${isRecording ? '⏹' : '🎤'}
+        </button>
+        <button class="vad-btn ${vadMode ? 'active' : ''}" id="vadBtn" title="Voice Activity Detection mode">
+          ${vadCalibrating ? '📊' : vadMode ? '🔴' : '🎙️'}
         </button>
         <button class="clear-btn" id="clearBtn" title="Clear local data">🗑️</button>
       </div>
+      ${vadMode ? `
+      <div class="vad-status">
+        ${vadCalibrating ? `<div class="vad-calibrating">🔇 Stay silent... calibrating ambient noise</div>` : 
+          `<div class="vad-listening">${ttsPlaying ? '⏸️ Paused (TTS playing)' : isRecording ? '🔴 Recording...' : '👂 Listening...'}</div>`}
+        <div class="vad-level-bar"><div class="vad-level" id="vadLevel"></div></div>
+      </div>
+      ` : ''}
       <div class="settings">
         <select id="voiceSelect">
           <option disabled>— Voice —</option>
@@ -241,6 +265,9 @@ function bindEvents() {
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
   resetBtn?.addEventListener('click', resetSession);
 
+  const vadBtn = document.getElementById('vadBtn');
+  vadBtn?.addEventListener('click', () => toggleVadMode());
+
   const clearBtn = document.getElementById('clearBtn');
   clearBtn?.addEventListener('click', () => {
     if (confirm('Clear all local data? This removes cached messages, settings, and reloads the page.')) {
@@ -271,6 +298,120 @@ async function startRecording() {
     console.error('Mic error:', err);
     alert('Could not access microphone. Please allow microphone access.');
   }
+}
+
+// --- VAD recording (uses VAD's persistent stream) ---
+function vadStartRecording() {
+  if (!vad || isRecording) return;
+  const stream = vad.getStream();
+  if (!stream) return;
+
+  audioChunks = [];
+  mediaRecorder = new MediaRecorder(stream, { mimeType: getSupportedMimeType() });
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    // Don't stop stream tracks — VAD owns the stream
+    processRecording();
+  };
+  mediaRecorder.start();
+  recordingStartTime = Date.now();
+  isRecording = true;
+  soundVadSpeechStart();
+  render();
+}
+
+function vadStopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    isRecording = false;
+    soundRecordStop();
+    render();
+    // 500ms silence buffer
+    setTimeout(() => {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+    }, 500);
+  }
+}
+
+async function toggleVadMode() {
+  unlockAudio();
+  unlockAudioCtx();
+
+  if (vadMode) {
+    // Turn off VAD
+    vadMode = false;
+    if (vad) { vad.stop(); vad = null; }
+    if (isRecording) vadStopRecording();
+    render();
+    return;
+  }
+
+  // Turn on VAD
+  vadMode = true;
+  render();
+
+  vad = new VAD({
+    silenceMs: 1500,
+    minSpeechMs: 300,
+    onSpeechStart: () => {
+      if (!ttsPlaying && !isRecording && !recordingCooldown) {
+        vadStartRecording();
+      }
+    },
+    onSpeechEnd: () => {
+      if (isRecording) {
+        vadStopRecording();
+      }
+    },
+    onLevel: (rms, threshold) => {
+      vadLevel = rms;
+      vadThreshold = threshold;
+      // Update level indicator without full re-render
+      const indicator = document.getElementById('vadLevel');
+      if (indicator) {
+        const pct = Math.min(100, (rms / Math.max(threshold * 3, 0.05)) * 100);
+        indicator.style.width = `${pct}%`;
+        indicator.style.background = rms > threshold ? '#a6e3a1' : '#585b70';
+      }
+    },
+  });
+
+  try {
+    await vad.start();
+    // Auto-calibrate
+    await startCalibration();
+  } catch (err) {
+    console.error('VAD start failed:', err);
+    vadMode = false;
+    vad = null;
+    render();
+  }
+}
+
+async function startCalibration() {
+  if (!vad) return;
+  vadCalibrating = true;
+  vadCalibrationStep = 'silence';
+  render();
+
+  // Step 1: Measure silence
+  soundCalibrationBeep();
+  await new Promise(r => setTimeout(r, 500));
+
+  vadCalibrationStep = 'silence';
+  render();
+  await vad.calibrate(3000);
+
+  // Step 2: Done
+  soundCalibrationBeep();
+  await new Promise(r => setTimeout(r, 300));
+  soundCalibrationBeep();
+
+  vadCalibrating = false;
+  vadCalibrationStep = 'done';
+  soundVadListening();
+  render();
 }
 
 function getSupportedMimeType(): string {
@@ -501,7 +642,7 @@ loadHistory();
 
 // Keyboard shortcut: Space to toggle recording
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.repeat && !recordingCooldown && document.activeElement?.tagName !== 'SELECT') {
+  if (e.code === 'Space' && !e.repeat && !recordingCooldown && !vadMode && document.activeElement?.tagName !== 'SELECT') {
     e.preventDefault();
     if (isRecording) stopRecording();
     else startRecording();

@@ -287,6 +287,35 @@ header .subtitle {
 .bubble th, .bubble td { border: 1px solid var(--overlay); padding: 0.25em 0.5em; }
 .bubble strong { font-weight: 600; }
 
+/* VAD */
+.vad-btn {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 2px solid var(--overlay); background: var(--surface);
+  font-size: 1.2rem; cursor: pointer; transition: all 0.2s;
+}
+.vad-btn.active {
+  border-color: var(--red, #f38ba8); background: rgba(243, 139, 168, 0.15);
+  animation: pulse-vad 2s ease-in-out infinite;
+}
+@keyframes pulse-vad {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(243, 139, 168, 0.3); }
+  50% { box-shadow: 0 0 0 8px rgba(243, 139, 168, 0); }
+}
+.vad-status {
+  text-align: center; padding: 0.3rem 0.5rem;
+  font-size: 0.8rem; color: var(--subtext);
+}
+.vad-calibrating { color: var(--blue); font-weight: 500; }
+.vad-listening { color: var(--green); }
+.vad-level-bar {
+  width: 100%; height: 4px; background: var(--overlay);
+  border-radius: 2px; margin-top: 0.3rem; overflow: hidden;
+}
+.vad-level {
+  height: 100%; width: 0%; background: var(--green);
+  border-radius: 2px; transition: width 0.05s linear;
+}
+
 .empty-state {
   flex: 1;
   display: flex;

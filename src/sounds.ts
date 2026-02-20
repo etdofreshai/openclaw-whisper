@@ -115,3 +115,19 @@ export function stopThinkingSound() {
   }
   thinkingStep = 0;
 }
+
+/** Calibration beep — short high tone */
+export function soundCalibrationBeep() {
+  playTone(1000, 0.15, 'sine', 0.2);
+}
+
+/** VAD speech detected — very subtle tick */
+export function soundVadSpeechStart() {
+  playTone(600, 0.04, 'sine', 0.06);
+}
+
+/** VAD listening resumed — gentle rising tone */
+export function soundVadListening() {
+  playTone(440, 0.06, 'sine', 0.08);
+  playTone(550, 0.06, 'sine', 0.08, 0.06);
+}
