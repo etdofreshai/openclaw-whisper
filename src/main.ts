@@ -305,7 +305,15 @@ function bindEvents() {
 }
 
 // --- Recording ---
+function stopTtsPlayback() {
+  if (ttsAudio && !ttsAudio.paused) {
+    ttsAudio.pause();
+    ttsAudio.currentTime = 0;
+  }
+}
+
 async function startRecording() {
+  stopTtsPlayback();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioChunks = [];
@@ -329,6 +337,7 @@ async function startRecording() {
 // --- VAD recording (uses VAD's persistent stream) ---
 function vadStartRecording() {
   if (!vad || isRecording) return;
+  stopTtsPlayback();
   const stream = vad.getStream();
   if (!stream) return;
 
