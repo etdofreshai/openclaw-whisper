@@ -388,6 +388,13 @@ app.post('/api/send', async (req, res) => {
             const parsed = JSON.parse(data);
             const delta = parsed.choices?.[0]?.delta?.content;
             if (delta) {
+              // Ensure space between chunks if missing (some gateways strip whitespace)
+              if (fullText.length > 0 && delta.length > 0) {
+                const lastChar = fullText[fullText.length - 1];
+                const firstChar = delta[0];
+                const needsSpace = /[.!?,;:]/.test(lastChar) && /[A-Za-z0-9]/.test(firstChar);
+                if (needsSpace) fullText += ' ';
+              }
               fullText += delta;
               // Broadcast partial text to all WS clients
               broadcastToClients({ type: 'stream', streamId, text: fullText });
