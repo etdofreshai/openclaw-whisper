@@ -285,7 +285,9 @@ function bindEvents() {
   resetBtn?.addEventListener('click', resetSession);
 
   const vadBtn = document.getElementById('vadBtn');
-  vadBtn?.addEventListener('click', () => toggleVadMode());
+  const vadToggle = (e: Event) => { e.preventDefault(); e.stopPropagation(); toggleVadMode(); };
+  vadBtn?.addEventListener('click', vadToggle);
+  vadBtn?.addEventListener('touchend', vadToggle);
 
   const calibrateBtn = document.getElementById('calibrateBtn');
   calibrateBtn?.addEventListener('click', () => {
@@ -433,7 +435,9 @@ async function toggleVadMode() {
   });
 
   try {
+    console.log('Starting VAD...');
     await vad.start();
+    console.log('VAD started successfully');
     // Restore saved calibration if available
     try {
       const saved = JSON.parse(localStorage.getItem('openclaw-whisper-calibration') || '');
@@ -441,8 +445,9 @@ async function toggleVadMode() {
       console.log(`Loaded saved calibration: noise=${saved.noiseFloor}`);
     } catch {}
     render();
-  } catch (err) {
+  } catch (err: any) {
     console.error('VAD start failed:', err);
+    alert(`VAD failed to start: ${err.message}`);
     vadMode = false;
     vad = null;
     render();
