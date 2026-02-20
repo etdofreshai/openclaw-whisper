@@ -186,18 +186,7 @@ function render() {
             `<option value="${v}" ${v === selectedVoice ? 'selected' : ''}>${v}</option>`
           ).join('')}
         </select>
-        <select id="speedSelect">
-          <option disabled>— Speed —</option>
-          ${['0.5','0.75','1','1.25','1.5','1.75','2'].map(s =>
-            `<option value="${s}" ${parseFloat(s) === playbackSpeed ? 'selected' : ''}>${s}x</option>`
-          ).join('')}
-        </select>
-        <select id="volumeSelect">
-          <option disabled>— Volume —</option>
-          ${['50','75','100','125','150','175','200'].map(v =>
-            `<option value="${v}" ${parseFloat(v) === volumeBoost ? 'selected' : ''}>${v}%</option>`
-          ).join('')}
-        </select>
+        <!-- speed and volume removed -->
         <button class="btn ${autoPlayTTS ? 'active' : ''}" id="autoPlayBtn">🔊</button>
       </div>
     </div>
@@ -227,7 +216,7 @@ function render() {
       audio.controls = true;
       audio.src = m.audioUrl;
       audio.preload = 'auto';
-      audio.playbackRate = playbackSpeed;
+      
       slot.appendChild(audio);
     }
   });
@@ -241,8 +230,8 @@ function render() {
         ttsPlayingMsgIdx = i;
         const a = ensureTtsAudio();
         a.src = m.audioUrl;
-        a.playbackRate = playbackSpeed;
-        applyVolumeBoost(a);
+        
+        
         a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
         // Re-embed since ttsPlayingMsgIdx changed
         const slot = conv.querySelector(`.audio-slot[data-msg-idx="${i}"]`);
@@ -286,13 +275,7 @@ function bindEvents() {
 
   pttBtn.addEventListener('click', toggleRec);
 
-  const speedSelect = document.getElementById('speedSelect') as HTMLSelectElement;
-
   voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; localStorage.setItem('openclaw-whisper-voice', selectedVoice); });
-  const volumeSelect = document.getElementById('volumeSelect') as HTMLSelectElement;
-
-  speedSelect.addEventListener('change', () => { playbackSpeed = parseFloat(speedSelect.value); localStorage.setItem('openclaw-whisper-speed', String(playbackSpeed)); });
-  volumeSelect.addEventListener('change', () => { volumeBoost = parseFloat(volumeSelect.value); localStorage.setItem('openclaw-whisper-volume', String(volumeBoost)); if (ttsAudio) applyVolumeBoost(ttsAudio); });
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
   resetBtn?.addEventListener('click', resetSession);
 
@@ -332,7 +315,7 @@ function stopTtsPlayback() {
 function resumeTtsPlayback() {
   if (ttsWasPlaying && ttsAudio && ttsAudio.src) {
     ttsAudio.currentTime = ttsResumeTime;
-    ttsAudio.playbackRate = playbackSpeed;
+    
     ttsAudio.play().catch(() => { ttsPlaying = false; if (vad && vadMode) vad.resume(); });
     ttsWasPlaying = false;
   } else {
@@ -708,8 +691,8 @@ async function handleRecordingPipeline(blob: Blob) {
     ttsPlayingMsgIdx = lastMsgIdx;
     const a = ensureTtsAudio();
     a.src = lastMsg.audioUrl;
-    a.playbackRate = playbackSpeed;
-    applyVolumeBoost(a);
+    
+    
     render();
     // Embed and autoplay
     if (autoPlayTTS && !isRecording) {
