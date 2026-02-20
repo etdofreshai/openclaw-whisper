@@ -3,7 +3,7 @@
 export interface VADOptions {
   /** RMS threshold above noise floor to trigger speech (default: 0.015) */
   threshold?: number;
-  /** Silence duration (ms) before stopping recording (default: 1500) */
+  /** Silence duration (ms) before stopping recording (default: 2000) */
   silenceMs?: number;
   /** Minimum speech duration (ms) before we accept it (default: 300) */
   minSpeechMs?: number;
@@ -43,7 +43,7 @@ export class VAD {
 
   constructor(options: VADOptions = {}) {
     this.threshold = options.threshold ?? 0.015;
-    this.silenceMs = options.silenceMs ?? 1500;
+    this.silenceMs = options.silenceMs ?? 2000;
     this.minSpeechMs = options.minSpeechMs ?? 300;
     this.intervalMs = options.intervalMs ?? 50;
     this.onSpeechStart = options.onSpeechStart;

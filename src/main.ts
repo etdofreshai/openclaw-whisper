@@ -378,7 +378,7 @@ async function toggleVadMode() {
   render();
 
   vad = new VAD({
-    silenceMs: 1500,
+    silenceMs: 2000,
     minSpeechMs: 300,
     onSpeechStart: () => {
       if (!ttsPlaying && !isRecording && !recordingCooldown) {
