@@ -147,7 +147,7 @@ function render() {
         <button class="ptt-btn ${isRecording ? 'recording' : ''}" id="pttBtn" ${recordingCooldown || vadMode ? 'disabled' : ''}>
           ${isRecording ? '⏹' : '🎤'}
         </button>
-        <button class="vad-btn ${vadMode ? 'active' : ''}" id="vadBtn" title="Voice Activity Detection mode" onclick="console.log('VAD onclick fired'); window._toggleVad && window._toggleVad()">
+        <button class="vad-btn ${vadMode ? 'active' : ''}" id="vadBtn">
           ${vadMode ? '🔴' : '🎙️'}
         </button>
         <button class="calibrate-btn" id="calibrateBtn" title="Calibrate microphone" ${vadCalibrating ? 'disabled' : ''}>
@@ -272,7 +272,6 @@ function bindEvents() {
   };
 
   pttBtn.addEventListener('click', toggleRec);
-  pttBtn.addEventListener('touchend', (e) => { e.preventDefault(); toggleRec(e); });
 
   const speedSelect = document.getElementById('speedSelect') as HTMLSelectElement;
 
@@ -284,12 +283,7 @@ function bindEvents() {
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
   resetBtn?.addEventListener('click', resetSession);
 
-  const vadBtn = document.getElementById('vadBtn');
-  if (vadBtn) {
-    let vadTouched = false;
-    vadBtn.addEventListener('touchend', (e) => { e.preventDefault(); vadTouched = true; toggleVadMode(); });
-    vadBtn.addEventListener('click', (e) => { e.preventDefault(); if (vadTouched) { vadTouched = false; return; } toggleVadMode(); });
-  }
+  document.getElementById('vadBtn')?.addEventListener('click', () => toggleVadMode());
 
   const calibrateBtn = document.getElementById('calibrateBtn');
   calibrateBtn?.addEventListener('click', () => {
@@ -392,8 +386,6 @@ function vadStopRecording() {
     }, 500);
   }
 }
-
-(window as any)._toggleVad = toggleVadMode;
 
 async function toggleVadMode() {
   console.log('toggleVadMode called, current vadMode:', vadMode);

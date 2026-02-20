@@ -225,13 +225,9 @@ header .subtitle {
   display: flex;
   align-items: center;
   justify-content: center;
-  position: absolute;
-  right: -60px;
 }
 
 .clear-btn:hover { background: var(--overlay); color: var(--red); }
-
-.controls-row { position: relative; }
 
 .btn {
   padding: 0.5rem 1rem;
