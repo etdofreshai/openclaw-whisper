@@ -19,6 +19,24 @@ const SESSION_KEY = SESSION_KEY_RAW.startsWith('agent:') ? SESSION_KEY_RAW : `ag
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// --- Server-side message history ---
+interface HistoryMessage { role: 'user' | 'assistant'; text: string; timestamp: number; }
+const HISTORY_FILE = path.join(os.tmpdir(), 'openclaw-whisper-history.json');
+
+function loadHistory(): HistoryMessage[] {
+  try { return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8')); } catch { return []; }
+}
+function saveHistory(messages: HistoryMessage[]) {
+  try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(messages)); } catch (e) { console.error('Save history error:', e); }
+}
+function appendHistory(msg: HistoryMessage) {
+  const msgs = loadHistory();
+  msgs.push(msg);
+  // Keep last 200 messages
+  if (msgs.length > 200) msgs.splice(0, msgs.length - 200);
+  saveHistory(msgs);
+}
+
 // --- Gateway connection ---
 let gatewayWs: WebSocket | null = null;
 let isConnecting = false;
@@ -282,6 +300,7 @@ app.post('/api/send', async (req, res) => {
       .replace('wss://', 'https://').replace('ws://', 'http://');
 
     console.log(`Sending via HTTP: sessionKey=${sessionKey} url=${gatewayHttpUrl}/v1/chat/completions`);
+    appendHistory({ role: 'user', text: message, timestamp: Date.now() });
 
     const response = await fetch(`${gatewayHttpUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -306,6 +325,7 @@ app.post('/api/send', async (req, res) => {
     const data = await response.json() as any;
     const assistantText = data.choices?.[0]?.message?.content || 'No response';
     console.log(`Got response: ${assistantText.slice(0, 100)}...`);
+    appendHistory({ role: 'assistant', text: assistantText, timestamp: Date.now() });
 
     res.json({ text: assistantText });
   } catch (err: any) {
@@ -350,31 +370,9 @@ app.get('/api/sessions/:key/history', async (req, res) => {
   }
 });
 
-// Chat history — try sessions.preview via WS, fall back gracefully
-app.get('/api/history', async (_req, res) => {
-  try {
-    if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) {
-      return res.status(503).json({ error: 'Gateway not connected' });
-    }
-    const requestId = generateRequestId();
-    const result = await new Promise<any>((resolve, reject) => {
-      const timeout = setTimeout(() => { pendingRequests.delete(requestId); reject(new Error('History request timeout')); }, 15000);
-      pendingRequests.set(requestId, {
-        resolve: (r: any) => resolve(r),
-        reject,
-        timeout,
-      });
-      gatewayWs!.send(JSON.stringify({
-        type: 'req', id: requestId, method: 'sessions.preview',
-        params: { sessionKey: getSessionKey(), messageLimit: 100 }
-      }));
-    });
-    console.log('History result:', JSON.stringify(result).slice(0, 500));
-    res.json(result);
-  } catch (err: any) {
-    console.error('History error:', err);
-    res.status(500).json({ error: err.message });
-  }
+// Chat history from server-side JSON file
+app.get('/api/history', (_req, res) => {
+  res.json({ messages: loadHistory() });
 });
 
 // Health
