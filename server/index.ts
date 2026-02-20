@@ -14,7 +14,7 @@ dotenv.config();
 const PORT = parseInt(process.env.BACKEND_PORT || process.env.PORT || '3001');
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'wss://openclaw.etdofresh.com';
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
-const SESSION_KEY_RAW = process.env.OPENCLAW_SESSION_KEY || 'whisper-voice:ET';
+const SESSION_KEY_RAW = (process.env.OPENCLAW_SESSION_KEY || 'whisper-voice:ET').toLowerCase();
 const SESSION_KEY = SESSION_KEY_RAW.startsWith('agent:') ? SESSION_KEY_RAW : `agent:main:${SESSION_KEY_RAW}`;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
