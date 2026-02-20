@@ -305,10 +305,25 @@ function bindEvents() {
 }
 
 // --- Recording ---
+let ttsWasPlaying = false;
+let ttsResumeTime = 0;
+
 function stopTtsPlayback() {
   if (ttsAudio && !ttsAudio.paused) {
+    ttsWasPlaying = true;
+    ttsResumeTime = ttsAudio.currentTime;
     ttsAudio.pause();
-    ttsAudio.currentTime = 0;
+  } else {
+    ttsWasPlaying = false;
+  }
+}
+
+function resumeTtsPlayback() {
+  if (ttsWasPlaying && ttsAudio && ttsAudio.src) {
+    ttsAudio.currentTime = ttsResumeTime;
+    ttsAudio.playbackRate = playbackSpeed;
+    ttsAudio.play().catch(() => {});
+    ttsWasPlaying = false;
   }
 }
 
@@ -593,7 +608,7 @@ async function handleRecordingPipeline(blob: Blob) {
     if (!sttRes.ok) throw new Error(`STT failed: ${sttRes.statusText}`);
     const { text: userText } = await sttRes.json();
 
-    if (!userText || userText.trim().length === 0) return;
+    if (!userText || userText.trim().length === 0) { resumeTtsPlayback(); return; }
 
     // Require at least 3 words to avoid sending fragments
     const wordCount = userText.trim().split(/\s+/).length;
@@ -601,8 +616,12 @@ async function handleRecordingPipeline(blob: Blob) {
       console.log(`Transcription too short (${wordCount} words): "${userText}"`);
       pushMessage({ role: 'user', text: `*(too short: "${userText.trim()}")* `, timestamp: Date.now() });
       render();
+      resumeTtsPlayback();
       return;
     }
+
+    // Real message — don't resume old TTS
+    ttsWasPlaying = false;
 
     // Add user message with recorded audio
     const userAudioUrl = URL.createObjectURL(blob);
