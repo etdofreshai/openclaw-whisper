@@ -714,7 +714,10 @@ async function handleRecordingPipeline(blob: Blob) {
 
     // Combine all TTS chunks into one audio blob for the player
     let audioUrl: string | undefined;
+    let alreadyPlayed = false;
+    
     if (ttsChunks.length > 0) {
+      console.log(`Progressive TTS: ${ttsChunks.length} chunks received`);
       const sortedChunks = [...ttsChunks].sort((a, b) => a.index - b.index);
       const blobs = await Promise.all(sortedChunks.map(async c => {
         const resp = await fetch(c.audioUrl);
@@ -722,11 +725,29 @@ async function handleRecordingPipeline(blob: Blob) {
       }));
       const combined = new Blob(blobs, { type: 'audio/mpeg' });
       audioUrl = URL.createObjectURL(combined);
+      alreadyPlayed = true;
+    } else {
+      // Fallback: no progressive chunks arrived, do single TTS
+      console.log('Progressive TTS: no chunks, falling back to single TTS');
+      try {
+        const ttsRes = await fetch(`${BASE}api/tts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: resultText, voice: selectedVoice }),
+        });
+        if (ttsRes.ok) {
+          const audioBlob = await ttsRes.blob();
+          audioUrl = URL.createObjectURL(audioBlob);
+        }
+      } catch (e) {
+        console.warn('Fallback TTS failed:', e);
+      }
     }
 
-    // Add message (audio already playing progressively, mark as played)
+    // Add message
     soundResponseReceived();
-    const msg: Message = { role: 'assistant', text: resultText, audioUrl, timestamp: Date.now(), audioPlayed: true };
+    if (!alreadyPlayed) await new Promise(r => setTimeout(r, 400));
+    const msg: Message = { role: 'assistant', text: resultText, audioUrl, timestamp: Date.now(), audioPlayed: alreadyPlayed };
     pushMessage(msg);
   } catch (err: any) {
     console.error('Process error:', err);
@@ -739,13 +760,25 @@ async function handleRecordingPipeline(blob: Blob) {
   pendingRequests = Math.max(0, pendingRequests - 1);
   render();
 
-  // Embed combined audio into the player slot (progressive TTS already played)
   const lastMsgIdx = messages.length - 1;
   const lastMsg = messages[lastMsgIdx];
   if (lastMsg?.audioUrl && lastMsg.role === 'assistant') {
     ttsPlayingMsgIdx = lastMsgIdx;
-    // Re-render to embed the audio element
     render();
+    
+    // If not already played progressively, autoplay now
+    if (!lastMsg.audioPlayed && autoPlayTTS && !isRecording) {
+      lastMsg.audioPlayed = true;
+      const a = ensureTtsAudio();
+      a.src = lastMsg.audioUrl;
+      a.playbackRate = playbackSpeed;
+      applyVolumeBoost(a);
+      const conv = document.getElementById('conversation');
+      const slot = conv?.querySelector(`.audio-slot[data-msg-idx="${lastMsgIdx}"]`);
+      if (slot) { slot.innerHTML = ''; slot.appendChild(a); }
+      a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
+      if (conv) conv.scrollTop = conv.scrollHeight;
+    }
   }
   
   resetTtsChunks();
