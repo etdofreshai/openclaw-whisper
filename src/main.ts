@@ -405,7 +405,12 @@ async function toggleVadMode() {
 
   try {
     await vad.start();
-    // Start listening with a default threshold (user can calibrate separately)
+    // Restore saved calibration if available
+    try {
+      const saved = JSON.parse(localStorage.getItem('openclaw-whisper-calibration') || '');
+      if (saved.noiseFloor != null) vad.setNoiseFloor(saved.noiseFloor);
+      console.log(`Loaded saved calibration: noise=${saved.noiseFloor}`);
+    } catch {}
     render();
   } catch (err) {
     console.error('VAD start failed:', err);
@@ -506,9 +511,10 @@ async function startCalibration() {
   const noiseFloor = vad!.getNoiseFloor();
   // Set threshold halfway between noise floor and speech, but at least 0.01 above noise
   const newThreshold = Math.max(0.01, (speechMedian - noiseFloor) * 0.4);
-  vad!.setNoiseFloor(noiseFloor); // keep noise floor from silence phase
-  // Update the VAD's threshold by recreating with new options
+  vad!.setNoiseFloor(noiseFloor);
   console.log(`Calibration: noise=${noiseFloor.toFixed(4)}, speech=${speechMedian.toFixed(4)}, threshold=${newThreshold.toFixed(4)}`);
+  // Persist calibration
+  localStorage.setItem('openclaw-whisper-calibration', JSON.stringify({ noiseFloor, threshold: newThreshold }));
 
   // Step 3: Done
   soundCalibrationBeep();
