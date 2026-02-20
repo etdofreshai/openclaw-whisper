@@ -272,10 +272,12 @@ app.post('/api/chat', async (req, res) => {
 // Send message to OpenClaw via HTTP chat completions endpoint
 app.post('/api/send', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, sessionKey: clientSessionKey } = req.body;
     if (!message) return res.status(400).json({ error: 'No message' });
 
-    const sessionKey = getSessionKey();
+    // Use client-provided session key if given, otherwise default
+    const rawKey = clientSessionKey || getSessionKey();
+    const sessionKey = rawKey.startsWith('agent:') ? rawKey : `agent:main:${rawKey}`;
     const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
       .replace('wss://', 'https://').replace('ws://', 'http://');
 
@@ -308,6 +310,42 @@ app.post('/api/send', async (req, res) => {
     res.json({ text: assistantText });
   } catch (err: any) {
     console.error('Send error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List sessions
+app.get('/api/sessions', async (_req, res) => {
+  try {
+    const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
+      .replace('wss://', 'https://').replace('ws://', 'http://');
+    const response = await fetch(`${gatewayHttpUrl}/v1/sessions?messageLimit=1`, {
+      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
+    });
+    if (!response.ok) return res.status(response.status).json({ error: await response.text() });
+    const data = await response.json();
+    res.json(data);
+  } catch (err: any) {
+    console.error('Sessions list error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Session history
+app.get('/api/sessions/:key/history', async (req, res) => {
+  try {
+    const key = decodeURIComponent(req.params.key);
+    const sessionKey = key.startsWith('agent:') ? key : `agent:main:${key}`;
+    const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
+      .replace('wss://', 'https://').replace('ws://', 'http://');
+    const response = await fetch(`${gatewayHttpUrl}/v1/sessions/${encodeURIComponent(sessionKey)}/history?limit=50`, {
+      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
+    });
+    if (!response.ok) return res.status(response.status).json({ error: await response.text() });
+    const data = await response.json();
+    res.json(data);
+  } catch (err: any) {
+    console.error('Session history error:', err);
     res.status(500).json({ error: err.message });
   }
 });
