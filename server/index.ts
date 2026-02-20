@@ -411,35 +411,8 @@ app.get('/api/sessions/:key/history', async (req, res) => {
 
 // Chat history — fetch from OpenClaw gateway session (persistent across restarts)
 app.get('/api/history', async (_req, res) => {
-  try {
-    const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
-      .replace('wss://', 'https://').replace('ws://', 'http://');
-    const sessionKey = getSessionKey();
-    const response = await fetch(`${gatewayHttpUrl}/v1/sessions/${encodeURIComponent(sessionKey)}/history?limit=100&includeTools=false`, {
-      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
-    });
-    if (!response.ok) {
-      console.warn(`Gateway history fetch failed: ${response.status}`);
-      // Fall back to local file
-      return res.json({ messages: loadHistory() });
-    }
-    const data = await response.json() as any;
-    const items = data.messages || data.items || data || [];
-    const messages: HistoryMessage[] = [];
-    for (const m of items) {
-      const role = m.role === 'assistant' ? 'assistant' as const : m.role === 'user' ? 'user' as const : null;
-      if (!role) continue;
-      const text = typeof m.content === 'string' ? m.content :
-        Array.isArray(m.content) ? m.content.map((c: any) => c?.text || '').filter(Boolean).join('\n') :
-        m.content?.text || m.text || '';
-      if (!text || text === 'NO_REPLY' || text === 'HEARTBEAT_OK') continue;
-      messages.push({ role, text, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
-    }
-    res.json({ messages });
-  } catch (err: any) {
-    console.error('History fetch error:', err);
-    res.json({ messages: loadHistory() });
-  }
+  // Return locally cached history (populated from gateway WS on connect)
+  res.json({ messages: loadHistory() });
 });
 
 // Health
