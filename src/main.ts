@@ -16,40 +16,15 @@ interface Message {
   audioPlayed?: boolean;
 }
 
-// --- Persistence (pending tasks only, messages come from server) ---
-const STORAGE_KEY_PENDING = 'openclaw-whisper-pending';
-
-interface PendingTask {
-  taskId: string;
-  timestamp: number;
-}
-
-function savePendingTasks(tasks: PendingTask[]) {
-  try { localStorage.setItem(STORAGE_KEY_PENDING, JSON.stringify(tasks)); } catch {}
-}
-
-function loadPendingTasks(): PendingTask[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_PENDING);
-    if (raw) {
-      const tasks: PendingTask[] = JSON.parse(raw);
-      const cutoff = Date.now() - 5 * 60 * 1000;
-      return tasks.filter(t => t.timestamp > cutoff);
-    }
-  } catch {}
-  return [];
-}
-
-let pendingTasks: PendingTask[] = loadPendingTasks();
+// --- Pending tasks (in-memory only) ---
+let pendingTaskIds = new Set<string>();
 
 function addPendingTask(taskId: string) {
-  pendingTasks.push({ taskId, timestamp: Date.now() });
-  savePendingTasks(pendingTasks);
+  pendingTaskIds.add(taskId);
 }
 
 function removePendingTask(taskId: string) {
-  pendingTasks = pendingTasks.filter(t => t.taskId !== taskId);
-  savePendingTasks(pendingTasks);
+  pendingTaskIds.delete(taskId);
 }
 
 function pushMessage(msg: Message) {
