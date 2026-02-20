@@ -586,6 +586,15 @@ async function handleRecordingPipeline(blob: Blob) {
 
     if (!userText || userText.trim().length === 0) return;
 
+    // Require at least 3 words to avoid sending fragments
+    const wordCount = userText.trim().split(/\s+/).length;
+    if (wordCount < 3) {
+      console.log(`Transcription too short (${wordCount} words): "${userText}"`);
+      pushMessage({ role: 'user', text: `*(too short: "${userText.trim()}")* `, timestamp: Date.now() });
+      render();
+      return;
+    }
+
     // Add user message with recorded audio
     const userAudioUrl = URL.createObjectURL(blob);
     pushMessage({ role: 'user', text: userText, audioUrl: userAudioUrl, timestamp: Date.now() });
