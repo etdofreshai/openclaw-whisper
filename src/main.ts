@@ -806,12 +806,31 @@ async function loadHistory() {
     if (!res.ok) { console.warn('History load failed:', res.status); return; }
     const data = await res.json();
     const history: any[] = data.messages || data || [];
-    // Gateway returns oldest-first; map to our Message format
+    // Gateway returns oldest-first; filter to only user/assistant text messages
     for (const m of history) {
-      const role = m.role === 'assistant' ? 'assistant' : 'user';
-      const text = extractText(m.content || m.text || '');
-      if (!text) continue;
-      messages.push({ role, text, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
+      // Skip system messages, tool calls, tool results
+      if (m.role !== 'user' && m.role !== 'assistant') continue;
+      
+      const content = m.content || m.text || '';
+      
+      // Skip tool call messages (content is array of tool calls, not text)
+      if (Array.isArray(content)) {
+        // Extract only text parts from content arrays
+        const textParts = content
+          .filter((c: any) => c.type === 'text' && c.text)
+          .map((c: any) => c.text)
+          .join('\n');
+        if (!textParts) continue;
+        messages.push({ role: m.role, text: textParts, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
+        continue;
+      }
+      
+      if (typeof content !== 'string' || !content.trim()) continue;
+      
+      // Skip internal markers
+      if (content === 'NO_REPLY' || content === 'HEARTBEAT_OK') continue;
+      
+      messages.push({ role: m.role, text: content, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
     }
     render();
   } catch (err) {
