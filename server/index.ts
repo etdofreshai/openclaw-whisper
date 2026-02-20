@@ -267,9 +267,10 @@ app.post('/api/tts', async (req, res) => {
     if (!text) return res.status(400).json({ error: 'No text' });
 
     const mp3 = await openai.audio.speech.create({
-      model: 'tts-1',
+      model: 'gpt-4o-mini-tts',
       voice: voice as any,
       input: text,
+      instructions: 'Speak in a fast, concise, and natural tone. Keep it conversational.',
     });
 
     const buffer = Buffer.from(await mp3.arrayBuffer());
