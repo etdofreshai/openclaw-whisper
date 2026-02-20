@@ -364,54 +364,8 @@ app.post('/api/send', async (req, res) => {
       return res.status(response.status).json({ error: errText });
     }
 
-    // Parse SSE stream with progressive TTS
+    // Parse SSE stream
     let fullText = '';
-    let ttsQueue = ''; // text waiting to be sent to TTS
-    let ttsChunkIndex = 0;
-    const ttsPromises: Promise<void>[] = [];
-    const selectedVoice = req.body.voice || 'nova';
-
-    // Send a chunk of text to TTS and broadcast audio
-    function sendTtsChunk(text: string, index: number) {
-      const p = (async () => {
-        try {
-          const mp3 = await openai.audio.speech.create({
-            model: 'tts-1',
-            voice: selectedVoice as any,
-            input: text,
-          });
-          const audioBuffer = Buffer.from(await mp3.arrayBuffer());
-          const base64 = audioBuffer.toString('base64');
-          broadcastToClients({
-            type: 'tts-chunk',
-            streamId,
-            index,
-            audio: base64,
-            contentType: 'audio/mpeg',
-            text,
-          });
-        } catch (err) {
-          console.warn(`TTS chunk ${index} failed:`, err);
-        }
-      })();
-      ttsPromises.push(p);
-    }
-
-    // Check for complete sentences and send to TTS
-    function flushSentences() {
-      // Match sentence boundaries: .!? followed by space or end
-      const match = ttsQueue.match(/^([\s\S]*?[.!?])\s/);
-      if (match) {
-        const sentence = match[1].trim();
-        if (sentence.length > 0) {
-          sendTtsChunk(sentence, ttsChunkIndex++);
-        }
-        ttsQueue = ttsQueue.slice(match[0].length);
-        // Recursively check for more sentences
-        flushSentences();
-      }
-    }
-
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
 
@@ -422,9 +376,8 @@ app.post('/api/send', async (req, res) => {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        // Process complete SSE lines
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // keep incomplete line in buffer
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
@@ -434,42 +387,27 @@ app.post('/api/send', async (req, res) => {
             const parsed = JSON.parse(data);
             const delta = parsed.choices?.[0]?.delta?.content;
             if (delta) {
-              // Ensure space between chunks if missing
               if (fullText.length > 0 && delta.length > 0) {
                 const lastChar = fullText[fullText.length - 1];
                 const firstChar = delta[0];
                 const needsSpace = /[.!?,;:]/.test(lastChar) && /[A-Za-z0-9]/.test(firstChar);
-                if (needsSpace) { fullText += ' '; ttsQueue += ' '; }
+                if (needsSpace) fullText += ' ';
               }
               fullText += delta;
-              ttsQueue += delta;
-              // Broadcast partial text to all WS clients
               broadcastToClients({ type: 'stream', streamId, text: fullText });
-              // Check for complete sentences to TTS
-              flushSentences();
             }
           } catch {}
         }
       }
     }
 
-    // Flush any remaining text to TTS
-    const remaining = ttsQueue.trim();
-    if (remaining.length > 0) {
-      sendTtsChunk(remaining, ttsChunkIndex++);
-    }
-
-    // Wait for all TTS chunks to finish
-    await Promise.all(ttsPromises);
-
     const assistantText = fullText || 'No response';
     console.log(`Got response: ${assistantText.slice(0, 100)}...`);
     appendHistory({ role: 'assistant', text: assistantText, timestamp: Date.now() });
 
-    // Broadcast stream complete with total chunk count
-    broadcastToClients({ type: 'stream-end', streamId, text: assistantText, totalChunks: ttsChunkIndex });
+    broadcastToClients({ type: 'stream-end', streamId, text: assistantText });
 
-    res.json({ text: assistantText, streamId, totalChunks: ttsChunkIndex });
+    res.json({ text: assistantText, streamId });
   } catch (err: any) {
     console.error('Send error:', err);
     res.status(500).json({ error: err.message });
