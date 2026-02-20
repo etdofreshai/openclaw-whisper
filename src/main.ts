@@ -134,7 +134,7 @@ function render() {
         <div class="message assistant">
           <div class="thinking">
             <div class="spinner"></div>
-            <span>${streamingText ? '' : ' Thinking...'}</span>
+            <span> Thinking...</span>
           </div>
           ${streamingText ? `<div class="bubble streaming">${renderMarkdown(streamingText)}</div>` : ''}
         </div>
