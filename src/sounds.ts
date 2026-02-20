@@ -98,15 +98,12 @@ export function startThinkingSound() {
 }
 
 function playThinkingPattern() {
-  // doot-doot ... doot-doot-doot pattern, very quiet
+  // Triple beep: beep-beep-beep, silence, repeat
   const vol = 0.04;
   const freq = 392; // G4
   playTone(freq, 0.06, 'sine', vol);
   playTone(freq, 0.06, 'sine', vol, 0.12);
-  // Third note on alternating cycles
-  if (thinkingStep % 2 === 1) {
-    playTone(freq, 0.06, 'sine', vol, 0.24);
-  }
+  playTone(freq, 0.06, 'sine', vol, 0.24);
   thinkingStep++;
 }
 

@@ -390,17 +390,18 @@ async function handleRecordingPipeline(blob: Blob) {
     render();
 
     // 2. Send to OpenClaw
+    soundSendSuccess();
+    startThinkingSound();
+
     const chatRes = await fetch(`${BASE}api/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: userText }),
     });
 
-    if (!chatRes.ok) throw new Error(`Chat failed: ${chatRes.statusText}`);
-    soundSendSuccess();
-    startThinkingSound();
+    if (!chatRes.ok) { stopThinkingSound(); throw new Error(`Chat failed: ${chatRes.statusText}`); }
 
-    // 3. Get response (synchronous HTTP)
+    // 3. Get response (synchronous HTTP — waits for full response)
     const chatData = await chatRes.json();
     const resultText = chatData.text || chatData.choices?.[0]?.message?.content || 'No response';
     stopThinkingSound();
@@ -559,71 +560,8 @@ if (savedMessages.length > 0) {
 connectWs();
 render();
 
-// Resume listening for pending tasks
-function resumePendingTasks() {
-  const tasks = loadPendingTasks();
-  if (tasks.length === 0) return;
-  pendingRequests = tasks.length;
-  startThinkingSound();
-  render();
-  
-  tasks.forEach(task => {
-    waitForResult(task.taskId).then(async (resultText) => {
-      removePendingTask(task.taskId);
-      stopThinkingSound();
-
-      // Get TTS audio
-      let audioUrl: string | undefined;
-      try {
-        const ttsRes = await fetch(`${BASE}api/tts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: resultText, voice: selectedVoice }),
-        });
-        if (ttsRes.ok) {
-          const audioBlob = await ttsRes.blob();
-          audioUrl = URL.createObjectURL(audioBlob);
-        }
-      } catch {}
-
-      soundResponseReceived();
-      await new Promise(r => setTimeout(r, 400));
-      pushMessage({ role: 'assistant', text: resultText, audioUrl, timestamp: Date.now(), audioPlayed: !!audioUrl });
-      pendingRequests = Math.max(0, pendingRequests - 1);
-      render();
-
-      // Autoplay
-      if (autoPlayTTS && !isRecording && audioUrl) {
-        const lastMsgIdx = messages.length - 1;
-        ttsPlayingMsgIdx = lastMsgIdx;
-        const a = ensureTtsAudio();
-        a.src = audioUrl;
-        a.playbackRate = playbackSpeed;
-        applyVolumeBoost(a);
-        const conv = document.getElementById('conversation');
-        const slot = conv?.querySelector(`.audio-slot[data-msg-idx="${lastMsgIdx}"]`);
-        if (slot) { slot.innerHTML = ''; slot.appendChild(a); }
-        a.play().catch(() => {});
-        if (conv) conv.scrollTop = conv.scrollHeight;
-      }
-    }).catch(() => {
-      removePendingTask(task.taskId);
-      pendingRequests = Math.max(0, pendingRequests - 1);
-      stopThinkingSound();
-      render();
-    });
-  });
-}
-
-// Wait for WS to connect before resuming pending tasks
-if (pendingTasks.length > 0) {
-  const checkWs = setInterval(() => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      clearInterval(checkWs);
-      resumePendingTasks();
-    }
-  }, 200);
-}
+// Clear any stale pending tasks from previous WS-based flow
+savePendingTasks([]);
 
 // Keyboard shortcut: Space to toggle recording
 document.addEventListener('keydown', (e) => {
