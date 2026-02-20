@@ -338,7 +338,10 @@ app.post('/api/send', async (req, res) => {
     const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
       .replace('wss://', 'https://').replace('ws://', 'http://');
 
-    console.log(`Sending via HTTP: sessionKey=${sessionKey} url=${gatewayHttpUrl}/v1/chat/completions`);
+    // Generate a streamId so the client can match partial updates
+    const streamId = `stream_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log(`Sending via HTTP (streaming): sessionKey=${sessionKey} streamId=${streamId}`);
     appendHistory({ role: 'user', text: message, timestamp: Date.now() });
 
     const response = await fetch(`${gatewayHttpUrl}/v1/chat/completions`, {
@@ -351,7 +354,7 @@ app.post('/api/send', async (req, res) => {
       body: JSON.stringify({
         model: 'default',
         messages: [{ role: 'user', content: message }],
-        stream: false,
+        stream: true,
       }),
     });
 
@@ -361,12 +364,47 @@ app.post('/api/send', async (req, res) => {
       return res.status(response.status).json({ error: errText });
     }
 
-    const data = await response.json() as any;
-    const assistantText = data.choices?.[0]?.message?.content || 'No response';
+    // Parse SSE stream
+    let fullText = '';
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (reader) {
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              fullText += delta;
+              // Broadcast partial text to all WS clients
+              broadcastToClients({ type: 'stream', streamId, text: fullText });
+            }
+          } catch {}
+        }
+      }
+    }
+
+    const assistantText = fullText || 'No response';
     console.log(`Got response: ${assistantText.slice(0, 100)}...`);
     appendHistory({ role: 'assistant', text: assistantText, timestamp: Date.now() });
 
-    res.json({ text: assistantText });
+    // Broadcast stream complete
+    broadcastToClients({ type: 'stream-end', streamId, text: assistantText });
+
+    res.json({ text: assistantText, streamId });
   } catch (err: any) {
     console.error('Send error:', err);
     res.status(500).json({ error: err.message });

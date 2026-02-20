@@ -287,6 +287,20 @@ header .subtitle {
 .bubble th, .bubble td { border: 1px solid var(--overlay); padding: 0.25em 0.5em; }
 .bubble strong { font-weight: 600; }
 
+/* Streaming text */
+.bubble.streaming {
+  opacity: 0.7;
+  font-size: 0.85rem;
+  border-left: 2px solid var(--blue);
+  padding-left: 0.6em;
+  margin-top: 0.3rem;
+}
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 /* VAD */
 .vad-btn {
   width: 44px; height: 44px; border-radius: 50%;

@@ -55,6 +55,10 @@ let vadLevel = 0;
 let vadThreshold = 0;
 let ttsPlaying = false; // track when TTS is playing to pause VAD
 
+// --- Streaming text ---
+let streamingText = ''; // partial text from current stream
+let activeStreamId = ''; // streamId we're tracking
+
 // Web Audio gain node for volume boost beyond 100%
 let gainNode: GainNode | null = null;
 let mediaSource: MediaElementAudioSourceNode | null = null;
@@ -126,7 +130,11 @@ function render() {
       `).join('')}
       ${pendingRequests > 0 ? `
         <div class="message assistant">
-          <div class="thinking"><div class="spinner"></div> Thinking...</div>
+          <div class="thinking">
+            <div class="spinner"></div>
+            <span>${streamingText ? '' : ' Thinking...'}</span>
+          </div>
+          ${streamingText ? `<div class="bubble streaming">${simpleMarkdown(streamingText)}</div>` : ''}
         </div>
       ` : ''}
     </div>
@@ -474,6 +482,8 @@ async function handleRecordingPipeline(blob: Blob) {
     // 2. Send to OpenClaw
     soundSendSuccess();
     startThinkingSound();
+    streamingText = '';
+    activeStreamId = '*'; // accept any stream
 
     const chatRes = await fetch(`${BASE}api/send`, {
       method: 'POST',
@@ -483,10 +493,12 @@ async function handleRecordingPipeline(blob: Blob) {
 
     if (!chatRes.ok) { stopThinkingSound(); throw new Error(`Chat failed: ${chatRes.statusText}`); }
 
-    // 3. Get response (synchronous HTTP — waits for full response)
+    // 3. Get response — streaming text was shown via WS, final text in response
     const chatData = await chatRes.json();
     const resultText = chatData.text || chatData.choices?.[0]?.message?.content || 'No response';
     stopThinkingSound();
+    streamingText = '';
+    activeStreamId = '';
 
     // 4. Get TTS audio
     let audioUrl: string | undefined;
@@ -584,7 +596,22 @@ function connectWs() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
-      if (msg.type === 'result' && pendingRequests === 0) {
+      if (msg.type === 'stream' && (activeStreamId === '*' || msg.streamId === activeStreamId)) {
+        if (activeStreamId === '*') activeStreamId = msg.streamId; // lock to this stream
+        streamingText = msg.text || '';
+        // Update streaming bubble without full re-render
+        const streamBubble = document.querySelector('.bubble.streaming');
+        if (streamBubble) {
+          streamBubble.innerHTML = simpleMarkdown(streamingText);
+          const conv = document.getElementById('conversation');
+          if (conv) conv.scrollTop = conv.scrollHeight;
+        } else {
+          render(); // first chunk — need full render to create the bubble
+        }
+      } else if (msg.type === 'stream-end' && msg.streamId === activeStreamId) {
+        streamingText = '';
+        activeStreamId = '';
+      } else if (msg.type === 'result' && pendingRequests === 0) {
         handleAsyncResult(msg);
       }
     } catch {}
