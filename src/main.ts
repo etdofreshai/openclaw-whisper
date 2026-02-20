@@ -146,13 +146,20 @@ function render() {
           ${isRecording ? '⏹' : '🎤'}
         </button>
         <button class="vad-btn ${vadMode ? 'active' : ''}" id="vadBtn" title="Voice Activity Detection mode">
-          ${vadCalibrating ? '📊' : vadMode ? '🔴' : '🎙️'}
+          ${vadMode ? '🔴' : '🎙️'}
+        </button>
+        <button class="calibrate-btn" id="calibrateBtn" title="Calibrate microphone" ${vadCalibrating ? 'disabled' : ''}>
+          ${vadCalibrating ? '📊' : '🎚️'}
         </button>
         <button class="clear-btn" id="clearBtn" title="Clear local data">🗑️</button>
       </div>
-      ${vadMode ? `
+      ${vadMode || vadCalibrating ? `
       <div class="vad-status">
-        ${vadCalibrating ? `<div class="vad-calibrating">🔇 Stay silent... calibrating ambient noise</div>` : 
+        ${vadCalibrating ? (
+          vadCalibrationStep === 'silence' ? `<div class="vad-calibrating">🔇 Stay silent for 3 seconds...</div>` :
+          vadCalibrationStep === 'speak' ? `<div class="vad-calibrating">🗣️ Read this aloud:<br><span class="calibration-phrase">"${calibrationPhrase}"</span></div>` :
+          `<div class="vad-calibrating">✅ Calibration complete!</div>`
+        ) : 
           `<div class="vad-listening">${ttsPlaying ? '⏸️ Paused (TTS playing)' : isRecording ? '🔴 Recording...' : '👂 Listening...'}</div>`}
         <div class="vad-level-bar"><div class="vad-level" id="vadLevel"></div></div>
       </div>
@@ -278,6 +285,13 @@ function bindEvents() {
   const vadBtn = document.getElementById('vadBtn');
   vadBtn?.addEventListener('click', () => toggleVadMode());
 
+  const calibrateBtn = document.getElementById('calibrateBtn');
+  calibrateBtn?.addEventListener('click', () => {
+    unlockAudio();
+    unlockAudioCtx();
+    startCalibration();
+  });
+
   const clearBtn = document.getElementById('clearBtn');
   clearBtn?.addEventListener('click', () => {
     if (confirm('Clear all local data? This removes cached messages, settings, and reloads the page.')) {
@@ -389,8 +403,8 @@ async function toggleVadMode() {
 
   try {
     await vad.start();
-    // Auto-calibrate
-    await startCalibration();
+    // Start listening with a default threshold (user can calibrate separately)
+    render();
   } catch (err) {
     console.error('VAD start failed:', err);
     vadMode = false;
@@ -399,27 +413,98 @@ async function toggleVadMode() {
   }
 }
 
-async function startCalibration() {
-  if (!vad) return;
-  vadCalibrating = true;
-  vadCalibrationStep = 'silence';
-  render();
+const CALIBRATION_PHRASES = [
+  "The quick brown fox jumps over the lazy dog near the riverbank on a warm summer evening.",
+  "She sells seashells by the seashore while the waves crash gently against the sandy beach below.",
+  "Every morning I wake up early and make a fresh cup of coffee before starting my daily routine.",
+  "The old bookstore on the corner has been there for decades, filled with stories waiting to be read.",
+  "Walking through the park at sunset, you can hear birds singing their last songs of the day.",
+];
 
-  // Step 1: Measure silence
+let calibrationPhrase = '';
+
+async function startCalibration() {
+  // If VAD isn't running yet, start it just for calibration
+  const needsStart = !vad;
+  if (needsStart) {
+    vad = new VAD({
+      silenceMs: 1500,
+      minSpeechMs: 300,
+      onLevel: (rms, threshold) => {
+        vadLevel = rms;
+        vadThreshold = threshold;
+        const indicator = document.getElementById('vadLevel');
+        if (indicator) {
+          const pct = Math.min(100, (rms / Math.max(threshold * 3, 0.05)) * 100);
+          indicator.style.width = `${pct}%`;
+          indicator.style.background = rms > threshold ? '#a6e3a1' : '#585b70';
+        }
+      },
+    });
+    await vad.start();
+  }
+
+  vadCalibrating = true;
+
+  // Step 1: Measure ambient silence
+  vadCalibrationStep = 'silence';
+  calibrationPhrase = '';
+  render();
+  soundCalibrationBeep();
+  await new Promise(r => setTimeout(r, 500));
+  
+  await vad.calibrate(3000);
   soundCalibrationBeep();
   await new Promise(r => setTimeout(r, 500));
 
-  vadCalibrationStep = 'silence';
+  // Step 2: Measure speech — give user something to read
+  vadCalibrationStep = 'speak';
+  calibrationPhrase = CALIBRATION_PHRASES[Math.floor(Math.random() * CALIBRATION_PHRASES.length)];
   render();
-  await vad.calibrate(3000);
-
-  // Step 2: Done
   soundCalibrationBeep();
   await new Promise(r => setTimeout(r, 300));
+
+  // Measure speech levels for 5 seconds
+  const speechSamples: number[] = [];
+  const speechStart = Date.now();
+  await new Promise<void>((resolve) => {
+    const interval = setInterval(() => {
+      if (!vad) { clearInterval(interval); resolve(); return; }
+      // Read RMS via the onLevel callback trick — we'll use a temp listener
+      const rms = vadLevel; // updated by onLevel
+      speechSamples.push(rms);
+      if (Date.now() - speechStart >= 5000) {
+        clearInterval(interval);
+        resolve();
+      }
+    }, 50);
+  });
+
+  // Calculate a good threshold between noise floor and speech level
+  speechSamples.sort((a, b) => a - b);
+  const speechMedian = speechSamples[Math.floor(speechSamples.length * 0.5)] || 0;
+  const noiseFloor = vad.getNoiseFloor();
+  // Set threshold halfway between noise floor and speech, but at least 0.01 above noise
+  const newThreshold = Math.max(0.01, (speechMedian - noiseFloor) * 0.4);
+  vad.setNoiseFloor(noiseFloor); // keep noise floor from silence phase
+  // Update the VAD's threshold by recreating with new options
+  console.log(`Calibration: noise=${noiseFloor.toFixed(4)}, speech=${speechMedian.toFixed(4)}, threshold=${newThreshold.toFixed(4)}`);
+
+  // Step 3: Done
+  soundCalibrationBeep();
+  await new Promise(r => setTimeout(r, 200));
   soundCalibrationBeep();
 
   vadCalibrating = false;
   vadCalibrationStep = 'done';
+  calibrationPhrase = '';
+
+  // If we started VAD just for calibration and VAD mode isn't on, stop it
+  if (needsStart && !vadMode) {
+    vad.stop();
+    vad = null;
+  }
+
   soundVadListening();
   render();
 }
