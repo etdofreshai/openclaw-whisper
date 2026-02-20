@@ -116,12 +116,14 @@ function fetchGatewayHistory(): void {
         const msgs = preview?.items || result?.messages || result?.lastMessages || [];
         const history: HistoryMessage[] = [];
         for (const m of msgs) {
-          const role = m.role === 'assistant' ? 'assistant' as const : 'user' as const;
+          // Only keep user and assistant messages (skip tool, system, etc.)
+          if (m.role !== 'user' && m.role !== 'assistant') continue;
+          const role = m.role as 'user' | 'assistant';
           const text = typeof m.text === 'string' ? m.text :
             typeof m.content === 'string' ? m.content :
-            Array.isArray(m.content) ? m.content.map((c: any) => c?.text || '').filter(Boolean).join('\n') :
+            Array.isArray(m.content) ? m.content.filter((c: any) => c?.type === 'text').map((c: any) => c?.text || '').filter(Boolean).join('\n') :
             m.content?.text || String(m.content || m.text || '');
-          if (!text) continue;
+          if (!text || text === 'NO_REPLY' || text === 'HEARTBEAT_OK') continue;
           history.push({ role, text, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
         }
         if (history.length > 0) { saveHistory(history); console.log(`Loaded ${history.length} messages from gateway`); }
