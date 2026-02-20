@@ -96,8 +96,8 @@ function ensureTtsAudio(): HTMLAudioElement {
     // Pause VAD while TTS is playing — ignore silent unlock buffer
     const isRealAudio = () => ttsAudio!.duration > 0.5;
     ttsAudio.addEventListener('play', () => { if (isRealAudio()) { ttsPlaying = true; if (vad) vad.pause(); } });
-    ttsAudio.addEventListener('pause', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); render(); } });
-    ttsAudio.addEventListener('ended', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); render(); } });
+    ttsAudio.addEventListener('pause', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); } });
+    ttsAudio.addEventListener('ended', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); } });
   }
   return ttsAudio;
 }
@@ -322,15 +322,13 @@ function resumeTtsPlayback() {
   if (ttsWasPlaying && ttsAudio && ttsAudio.src) {
     ttsAudio.currentTime = ttsResumeTime;
     ttsAudio.playbackRate = playbackSpeed;
-    ttsAudio.play().catch(() => { ttsPlaying = false; });
+    ttsAudio.play().catch(() => { ttsPlaying = false; if (vad && vadMode) vad.resume(); });
     ttsWasPlaying = false;
-    render();
   } else {
     // Nothing to resume — make sure VAD is listening
     ttsWasPlaying = false;
     ttsPlaying = false;
-    if (vad && vadMode) { vad.resume(); }
-    render();
+    if (vad && vadMode) vad.resume();
   }
 }
 
