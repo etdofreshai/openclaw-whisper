@@ -93,7 +93,7 @@ function handleGatewayMessage(message: any): void {
         type: 'req', id: `connect_${Date.now()}`, method: 'connect',
         params: {
           minProtocol: 3, maxProtocol: 3,
-          client: { id: 'cli', version: '1.0.0', platform: 'linux', mode: 'cli' },
+          client: { id: 'gateway-client', version: '1.0.0', platform: 'linux', mode: 'backend' },
           role: 'operator', scopes: ['operator.read', 'operator.write', 'operator.admin'],
           caps: [],
           auth: { token: GATEWAY_TOKEN }
@@ -104,7 +104,7 @@ function handleGatewayMessage(message: any): void {
   }
 
   if (message.type === 'res' && message.ok && message.payload?.type === 'hello-ok') {
-    console.log('Gateway handshake complete:', JSON.stringify(message.payload).slice(0, 500));
+    console.log('Gateway handshake complete:', JSON.stringify(message.payload).slice(0, 1500));
   }
 
   // Handle response to our requests
