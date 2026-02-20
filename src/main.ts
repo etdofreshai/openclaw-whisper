@@ -108,7 +108,7 @@ function ensureTtsAudio(): HTMLAudioElement {
     // Pause VAD while TTS is playing to avoid picking up speaker output
     // Pause VAD while TTS is playing — ignore silent unlock buffer
     const isRealAudio = () => !!(ttsAudio!.duration && ttsAudio!.duration > 0.5 && isFinite(ttsAudio!.duration));
-    ttsAudio.addEventListener('play', () => { if (isRealAudio()) { ttsPlaying = true; if (vad) vad.pause(); } });
+    ttsAudio.addEventListener('play', () => { ttsAudio!.playbackRate = playbackSpeed; if (isRealAudio()) { ttsPlaying = true; if (vad) vad.pause(); } });
     ttsAudio.addEventListener('pause', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); } });
     ttsAudio.addEventListener('ended', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); } });
   }
@@ -186,7 +186,12 @@ function render() {
             `<option value="${v}" ${v === selectedVoice ? 'selected' : ''}>${v}</option>`
           ).join('')}
         </select>
-        <!-- speed and volume removed -->
+        <select id="speedSelect">
+          <option disabled>— Speed —</option>
+          ${['0.25','0.5','0.75','1','1.25','1.5','1.75','2'].map(s =>
+            `<option value="${s}" ${parseFloat(s) === playbackSpeed ? 'selected' : ''}>${s}x</option>`
+          ).join('')}
+        </select>
         <button class="btn ${autoPlayTTS ? 'active' : ''}" id="autoPlayBtn">🔊</button>
       </div>
     </div>
@@ -216,7 +221,7 @@ function render() {
       audio.controls = true;
       audio.src = m.audioUrl;
       audio.preload = 'auto';
-      
+      audio.playbackRate = playbackSpeed;
       slot.appendChild(audio);
     }
   });
@@ -276,6 +281,8 @@ function bindEvents() {
   pttBtn.addEventListener('click', toggleRec);
 
   voiceSelect.addEventListener('change', () => { selectedVoice = voiceSelect.value; localStorage.setItem('openclaw-whisper-voice', selectedVoice); });
+  const speedSelect = document.getElementById('speedSelect') as HTMLSelectElement;
+  speedSelect.addEventListener('change', () => { playbackSpeed = parseFloat(speedSelect.value); localStorage.setItem('openclaw-whisper-speed', String(playbackSpeed)); });
   autoPlayBtn.addEventListener('click', () => { autoPlayTTS = !autoPlayTTS; localStorage.setItem('openclaw-whisper-autoplay', String(autoPlayTTS)); render(); });
   resetBtn?.addEventListener('click', resetSession);
 
