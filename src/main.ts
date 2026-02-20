@@ -16,39 +16,12 @@ interface Message {
   audioPlayed?: boolean;
 }
 
-// --- Persistence ---
-const STORAGE_KEY_MESSAGES = 'openclaw-whisper-messages';
+// --- Persistence (pending tasks only, messages come from server) ---
 const STORAGE_KEY_PENDING = 'openclaw-whisper-pending';
 
 interface PendingTask {
   taskId: string;
   timestamp: number;
-}
-
-function saveMessages() {
-  // Save messages without blob audioUrls (those don't survive reload)
-  const serializable = messages.map(m => ({ ...m, audioUrl: undefined }));
-  try { localStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(serializable)); } catch {}
-}
-
-function loadMessages(): Message[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_MESSAGES);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.map((m: any) => ({
-        ...m,
-        text: typeof m.text === 'string' ? m.text : extractText(m.text) || '[message]',
-        role: m.role === 'user' ? 'user' : 'assistant',
-        timestamp: typeof m.timestamp === 'number' ? m.timestamp : Date.now(),
-      }));
-    }
-  } catch {
-    // Corrupt localStorage — clear it
-    try { localStorage.removeItem(STORAGE_KEY_MESSAGES); } catch {}
-  }
-  return [];
 }
 
 function savePendingTasks(tasks: PendingTask[]) {
@@ -60,7 +33,6 @@ function loadPendingTasks(): PendingTask[] {
     const raw = localStorage.getItem(STORAGE_KEY_PENDING);
     if (raw) {
       const tasks: PendingTask[] = JSON.parse(raw);
-      // Expire tasks older than 5 minutes
       const cutoff = Date.now() - 5 * 60 * 1000;
       return tasks.filter(t => t.timestamp > cutoff);
     }
@@ -82,12 +54,6 @@ function removePendingTask(taskId: string) {
 
 function pushMessage(msg: Message) {
   messages.push(msg);
-  saveMessages();
-}
-
-function clearMessages() {
-  messages = [];
-  saveMessages();
 }
 
 // --- State ---
@@ -529,39 +495,34 @@ async function handleAsyncResult(msg: any) {
 
 async function resetSession() {
   await fetch(`${BASE}api/session/reset`, { method: 'POST' });
-  clearMessages();
+  messages = [];
   render();
 }
 
-// --- Init ---
-// Emergency clear via URL param
-if (new URLSearchParams(window.location.search).has('clear')) {
-  Object.keys(localStorage).filter(k => k.startsWith('openclaw-whisper')).forEach(k => localStorage.removeItem(k));
-  window.history.replaceState({}, '', window.location.pathname);
-  console.log('localStorage cleared via ?clear param');
-}
-
-// Restore persisted messages
-const savedMessages = loadMessages();
-if (savedMessages.length > 0) {
+// --- Load chat history from gateway ---
+async function loadHistory() {
   try {
-    messages = savedMessages.map(m => {
-      const text = typeof m.text === 'string' ? m.text : String(extractText(m.text) || '');
-      if (typeof text !== 'string') throw new Error('non-string text after extract');
-      return { ...m, text, audioPlayed: true, audioUrl: undefined };
-    });
-  } catch (e) {
-    console.error('Corrupt messages in localStorage, clearing:', e);
-    localStorage.removeItem(STORAGE_KEY_MESSAGES);
-    messages = [];
+    const res = await fetch(`${BASE}api/history`);
+    if (!res.ok) { console.warn('History load failed:', res.status); return; }
+    const data = await res.json();
+    const history: any[] = data.messages || data || [];
+    // Gateway returns oldest-first; map to our Message format
+    for (const m of history) {
+      const role = m.role === 'assistant' ? 'assistant' : 'user';
+      const text = extractText(m.content || m.text || '');
+      if (!text) continue;
+      messages.push({ role, text, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
+    }
+    render();
+  } catch (err) {
+    console.warn('Failed to load history:', err);
   }
 }
 
+// --- Init ---
 connectWs();
 render();
-
-// Clear any stale pending tasks from previous WS-based flow
-savePendingTasks([]);
+loadHistory();
 
 // Keyboard shortcut: Space to toggle recording
 document.addEventListener('keydown', (e) => {

@@ -350,6 +350,27 @@ app.get('/api/sessions/:key/history', async (req, res) => {
   }
 });
 
+// Chat history for the default session
+app.get('/api/history', async (_req, res) => {
+  try {
+    const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
+      .replace('wss://', 'https://').replace('ws://', 'http://');
+    const sessionKey = getSessionKey();
+    const response = await fetch(`${gatewayHttpUrl}/v1/sessions/${encodeURIComponent(sessionKey)}/history?limit=100`, {
+      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
+    });
+    if (!response.ok) {
+      console.error(`History fetch error: ${response.status} ${await response.text()}`);
+      return res.status(response.status).json({ error: 'Failed to load history' });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err: any) {
+    console.error('History error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health
 app.get('/api/health', (_req, res) => {
   res.json({
