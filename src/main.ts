@@ -93,9 +93,11 @@ function ensureTtsAudio(): HTMLAudioElement {
     ttsAudio.volume = 1;
     ttsAudio.preload = 'auto';
     // Pause VAD while TTS is playing to avoid picking up speaker output
-    ttsAudio.addEventListener('play', () => { ttsPlaying = true; if (vad) vad.pause(); });
-    ttsAudio.addEventListener('pause', () => { ttsPlaying = false; if (vad) { vad.resume(); soundVadListening(); } });
-    ttsAudio.addEventListener('ended', () => { ttsPlaying = false; if (vad) { vad.resume(); soundVadListening(); } });
+    // Pause VAD while TTS is playing — ignore silent unlock buffer
+    const isRealAudio = () => ttsAudio!.duration > 0.5;
+    ttsAudio.addEventListener('play', () => { if (isRealAudio()) { ttsPlaying = true; if (vad) vad.pause(); } });
+    ttsAudio.addEventListener('pause', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); } });
+    ttsAudio.addEventListener('ended', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); } });
   }
   return ttsAudio;
 }
@@ -105,7 +107,7 @@ function unlockAudio() {
   // Play a silent buffer to unlock
   const wasSrc = a.src;
   a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-  a.play().then(() => { a.pause(); a.currentTime = 0; if (wasSrc) a.src = wasSrc; }).catch(() => {});
+  a.play().then(() => { a.pause(); a.currentTime = 0; ttsPlaying = false; if (wasSrc) a.src = wasSrc; }).catch(() => { ttsPlaying = false; });
 }
 
 // --- Render ---
@@ -157,7 +159,7 @@ function render() {
       <div class="vad-status">
         ${vadCalibrating ? (
           vadCalibrationStep === 'silence' ? `<div class="vad-calibrating">🔇 Stay silent for 3 seconds...</div>` :
-          vadCalibrationStep === 'speak' ? `<div class="vad-calibrating">🗣️ Read this aloud:<br><span class="calibration-phrase">"${calibrationPhrase}"</span></div>` :
+          vadCalibrationStep === 'speak' ? `<div class="vad-calibrating">🗣️ Read this aloud (stop when done):<br><span class="calibration-phrase">"${calibrationPhrase}"</span></div>` :
           `<div class="vad-calibrating">✅ Calibration complete!</div>`
         ) : 
           `<div class="vad-listening">${ttsPlaying ? '⏸️ Paused (TTS playing)' : isRecording ? '🔴 Recording...' : '👂 Listening...'}</div>`}
@@ -464,16 +466,34 @@ async function startCalibration() {
   soundCalibrationBeep();
   await new Promise(r => setTimeout(r, 300));
 
-  // Measure speech levels for 5 seconds
+  // Measure speech levels — minimum 5 seconds, then wait for 2s of silence
   const speechSamples: number[] = [];
   const speechStart = Date.now();
+  const MIN_SPEECH_MS = 5000;
+  const SILENCE_THRESHOLD_MS = 2000;
+  let lastLoudTime = Date.now();
+  
   await new Promise<void>((resolve) => {
     const interval = setInterval(() => {
       if (!vad) { clearInterval(interval); resolve(); return; }
-      // Read RMS via the onLevel callback trick — we'll use a temp listener
-      const rms = vadLevel; // updated by onLevel
+      const rms = vadLevel;
       speechSamples.push(rms);
-      if (Date.now() - speechStart >= 5000) {
+      const elapsed = Date.now() - speechStart;
+      const noiseFloorEst = vad!.getNoiseFloor();
+      
+      // Track when we last heard speech
+      if (rms > noiseFloorEst + 0.005) {
+        lastLoudTime = Date.now();
+      }
+      
+      // Only stop after minimum time AND 2s of silence
+      if (elapsed >= MIN_SPEECH_MS && (Date.now() - lastLoudTime) >= SILENCE_THRESHOLD_MS) {
+        clearInterval(interval);
+        resolve();
+      }
+      
+      // Hard cap at 20 seconds
+      if (elapsed >= 20000) {
         clearInterval(interval);
         resolve();
       }
