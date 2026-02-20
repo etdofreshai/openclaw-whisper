@@ -85,6 +85,8 @@ header .subtitle {
   flex-direction: column;
   gap: 0.25rem;
   max-width: 85%;
+  min-width: 0;
+  overflow: hidden;
   animation: fadeIn 0.2s ease;
 }
 
@@ -269,7 +271,8 @@ header .subtitle {
 .bubble p { margin: 0; }
 .bubble p + p { margin-top: 0.3em; }
 .bubble code { background: rgba(0,0,0,0.25); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
-.bubble pre { background: rgba(0,0,0,0.3); padding: 0.6em 0.8em; border-radius: 6px; overflow-x: auto; margin: 0.3em 0; }
+.bubble pre { background: rgba(0,0,0,0.3); padding: 0.6em 0.8em; border-radius: 6px; overflow-x: auto; margin: 0.3em 0; max-width: 100%; }
+.bubble { word-break: break-word; overflow-wrap: break-word; min-width: 0; }
 .bubble pre code { background: none; padding: 0; }
 .bubble ul, .bubble ol { margin: 0; padding-left: 1.4em; }
 .bubble p + ul, .bubble p + ol { margin-top: 0.15em; }
