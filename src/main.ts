@@ -453,7 +453,7 @@ async function startCalibration() {
   soundCalibrationBeep();
   await new Promise(r => setTimeout(r, 500));
   
-  await vad.calibrate(3000);
+  await vad!.calibrate(3000);
   soundCalibrationBeep();
   await new Promise(r => setTimeout(r, 500));
 
@@ -483,10 +483,10 @@ async function startCalibration() {
   // Calculate a good threshold between noise floor and speech level
   speechSamples.sort((a, b) => a - b);
   const speechMedian = speechSamples[Math.floor(speechSamples.length * 0.5)] || 0;
-  const noiseFloor = vad.getNoiseFloor();
+  const noiseFloor = vad!.getNoiseFloor();
   // Set threshold halfway between noise floor and speech, but at least 0.01 above noise
   const newThreshold = Math.max(0.01, (speechMedian - noiseFloor) * 0.4);
-  vad.setNoiseFloor(noiseFloor); // keep noise floor from silence phase
+  vad!.setNoiseFloor(noiseFloor); // keep noise floor from silence phase
   // Update the VAD's threshold by recreating with new options
   console.log(`Calibration: noise=${noiseFloor.toFixed(4)}, speech=${speechMedian.toFixed(4)}, threshold=${newThreshold.toFixed(4)}`);
 
@@ -500,7 +500,7 @@ async function startCalibration() {
   calibrationPhrase = '';
 
   // If we started VAD just for calibration and VAD mode isn't on, stop it
-  if (needsStart && !vadMode) {
+  if (needsStart && !vadMode && vad) {
     vad.stop();
     vad = null;
   }
