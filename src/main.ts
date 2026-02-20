@@ -1,10 +1,12 @@
 import './style.css';
-// Simple markdown-like rendering (no heavy parser)
+import { marked } from 'marked';
 import { soundRecordStart, soundRecordStop, soundSendSuccess, soundResponseReceived, soundError, startTranscribingSound, stopTranscribingSound, startThinkingSound, stopThinkingSound, unlockAudioCtx, soundCalibrationBeep, soundVadSpeechStart, soundVadListening } from './sounds';
 import { VAD } from './vad';
 
-function simpleMarkdown(text: string): string {
-  return escapeHtml(text).replace(/\n/g, '<br>');
+marked.setOptions({ breaks: true });
+
+function renderMarkdown(text: string): string {
+  try { return marked.parse(text) as string; } catch { return escapeHtml(text).replace(/\n/g, '<br>'); }
 }
 
 const BASE = import.meta.env.BASE_URL;
@@ -123,7 +125,7 @@ function render() {
       ${messages.length === 0 ? '<div class="empty-state">Tap the mic to start recording, tap again to send</div>' : ''}
       ${messages.map((m, i) => `
         <div class="message ${m.role}">
-          <div class="bubble">${simpleMarkdown(String(m.text || ''))}</div>
+          <div class="bubble">${renderMarkdown(String(m.text || ''))}</div>
           ${m.audioUrl ? `<div class="audio-slot" data-msg-idx="${i}"></div>` : ''}
           <div class="meta">${new Date(m.timestamp).toLocaleTimeString()}</div>
         </div>
@@ -134,7 +136,7 @@ function render() {
             <div class="spinner"></div>
             <span>${streamingText ? '' : ' Thinking...'}</span>
           </div>
-          ${streamingText ? `<div class="bubble streaming">${simpleMarkdown(streamingText)}</div>` : ''}
+          ${streamingText ? `<div class="bubble streaming">${renderMarkdown(streamingText)}</div>` : ''}
         </div>
       ` : ''}
     </div>
@@ -602,7 +604,7 @@ function connectWs() {
         // Update streaming bubble without full re-render
         const streamBubble = document.querySelector('.bubble.streaming');
         if (streamBubble) {
-          streamBubble.innerHTML = simpleMarkdown(streamingText);
+          streamBubble.innerHTML = renderMarkdown(streamingText);
           const conv = document.getElementById('conversation');
           if (conv) conv.scrollTop = conv.scrollHeight;
         } else {
