@@ -147,7 +147,7 @@ function render() {
         <button class="ptt-btn ${isRecording ? 'recording' : ''}" id="pttBtn" ${recordingCooldown || vadMode ? 'disabled' : ''}>
           ${isRecording ? '⏹' : '🎤'}
         </button>
-        <button class="vad-btn ${vadMode ? 'active' : ''}" id="vadBtn" title="Voice Activity Detection mode">
+        <button class="vad-btn ${vadMode ? 'active' : ''}" id="vadBtn" title="Voice Activity Detection mode" onclick="console.log('VAD onclick fired'); window._toggleVad && window._toggleVad()">
           ${vadMode ? '🔴' : '🎙️'}
         </button>
         <button class="calibrate-btn" id="calibrateBtn" title="Calibrate microphone" ${vadCalibrating ? 'disabled' : ''}>
@@ -392,6 +392,8 @@ function vadStopRecording() {
     }, 500);
   }
 }
+
+(window as any)._toggleVad = toggleVadMode;
 
 async function toggleVadMode() {
   console.log('toggleVadMode called, current vadMode:', vadMode);
