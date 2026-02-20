@@ -94,7 +94,7 @@ function ensureTtsAudio(): HTMLAudioElement {
     ttsAudio.preload = 'auto';
     // Pause VAD while TTS is playing to avoid picking up speaker output
     // Pause VAD while TTS is playing — ignore silent unlock buffer
-    const isRealAudio = () => ttsAudio!.duration > 0.5;
+    const isRealAudio = () => !!(ttsAudio!.duration && ttsAudio!.duration > 0.5 && isFinite(ttsAudio!.duration));
     ttsAudio.addEventListener('play', () => { if (isRealAudio()) { ttsPlaying = true; if (vad) vad.pause(); } });
     ttsAudio.addEventListener('pause', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); } });
     ttsAudio.addEventListener('ended', () => { ttsPlaying = false; if (vad && vadMode) { vad.resume(); soundVadListening(); } });
@@ -285,9 +285,11 @@ function bindEvents() {
   resetBtn?.addEventListener('click', resetSession);
 
   const vadBtn = document.getElementById('vadBtn');
-  const vadToggle = (e: Event) => { e.preventDefault(); e.stopPropagation(); toggleVadMode(); };
-  vadBtn?.addEventListener('click', vadToggle);
-  vadBtn?.addEventListener('touchend', vadToggle);
+  if (vadBtn) {
+    let vadTouched = false;
+    vadBtn.addEventListener('touchend', (e) => { e.preventDefault(); vadTouched = true; toggleVadMode(); });
+    vadBtn.addEventListener('click', (e) => { e.preventDefault(); if (vadTouched) { vadTouched = false; return; } toggleVadMode(); });
+  }
 
   const calibrateBtn = document.getElementById('calibrateBtn');
   calibrateBtn?.addEventListener('click', () => {
@@ -392,6 +394,7 @@ function vadStopRecording() {
 }
 
 async function toggleVadMode() {
+  console.log('toggleVadMode called, current vadMode:', vadMode);
   unlockAudio();
   unlockAudioCtx();
 
