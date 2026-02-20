@@ -61,6 +61,58 @@ let ttsPlaying = false; // track when TTS is playing to pause VAD
 let streamingText = ''; // partial text from current stream
 let activeStreamId = ''; // streamId we're tracking
 
+// --- Progressive TTS ---
+interface TtsChunk {
+  index: number;
+  audioUrl: string;
+}
+let ttsChunks: TtsChunk[] = []; // received chunks, sorted by index
+let ttsPlayIndex = 0; // next chunk to play
+let ttsChunksPlaying = false; // currently playing through chunks
+
+function receiveTtsChunk(index: number, base64Audio: string, contentType: string) {
+  const binary = atob(base64Audio);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: contentType });
+  const audioUrl = URL.createObjectURL(blob);
+  ttsChunks.push({ index, audioUrl });
+  ttsChunks.sort((a, b) => a.index - b.index);
+  // Try to play if we're not already playing
+  playNextTtsChunk();
+}
+
+function playNextTtsChunk() {
+  if (ttsChunksPlaying || isRecording) return;
+  // Find the next chunk in sequence
+  const next = ttsChunks.find(c => c.index === ttsPlayIndex);
+  if (!next) return;
+  
+  ttsChunksPlaying = true;
+  const a = ensureTtsAudio();
+  a.src = next.audioUrl;
+  a.playbackRate = playbackSpeed;
+  applyVolumeBoost(a);
+  
+  a.onended = () => {
+    ttsChunksPlaying = false;
+    ttsPlayIndex++;
+    playNextTtsChunk();
+  };
+  
+  a.play().catch(() => {
+    ttsChunksPlaying = false;
+    ttsPlayIndex++;
+    playNextTtsChunk();
+  });
+}
+
+function resetTtsChunks() {
+  ttsChunks = [];
+  ttsPlayIndex = 0;
+  ttsChunksPlaying = false;
+}
+
 // Web Audio gain node for volume boost beyond 100%
 let gainNode: GainNode | null = null;
 let mediaSource: MediaElementAudioSourceNode | null = null;
@@ -311,6 +363,8 @@ function stopTtsPlayback() {
     ttsWasPlaying = true;
     ttsResumeTime = ttsAudio.currentTime;
     ttsAudio.pause();
+    ttsAudio.onended = null; // stop progressive chain
+    ttsChunksPlaying = false;
   } else {
     ttsWasPlaying = false;
   }
@@ -636,47 +690,43 @@ async function handleRecordingPipeline(blob: Blob) {
     pendingRequests++;
     render();
 
-    // 2. Send to OpenClaw
+    // 2. Send to OpenClaw (with progressive TTS)
     soundSendSuccess();
     startThinkingSound();
     streamingText = '';
     activeStreamId = '*'; // accept any stream
+    resetTtsChunks();
 
     const chatRes = await fetch(`${BASE}api/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: userText }),
+      body: JSON.stringify({ message: userText, voice: selectedVoice }),
     });
 
     if (!chatRes.ok) { stopThinkingSound(); throw new Error(`Chat failed: ${chatRes.statusText}`); }
 
-    // 3. Get response — streaming text was shown via WS, final text in response
+    // 3. Get response — streaming text + progressive TTS was handled via WS
     const chatData = await chatRes.json();
     const resultText = chatData.text || chatData.choices?.[0]?.message?.content || 'No response';
     stopThinkingSound();
     streamingText = '';
     activeStreamId = '';
 
-    // 4. Get TTS audio
+    // Combine all TTS chunks into one audio blob for the player
     let audioUrl: string | undefined;
-    try {
-      const ttsRes = await fetch(`${BASE}api/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: resultText, voice: selectedVoice }),
-      });
-      if (ttsRes.ok) {
-        const audioBlob = await ttsRes.blob();
-        audioUrl = URL.createObjectURL(audioBlob);
-      }
-    } catch (e) {
-      console.warn('TTS failed:', e);
+    if (ttsChunks.length > 0) {
+      const sortedChunks = [...ttsChunks].sort((a, b) => a.index - b.index);
+      const blobs = await Promise.all(sortedChunks.map(async c => {
+        const resp = await fetch(c.audioUrl);
+        return resp.blob();
+      }));
+      const combined = new Blob(blobs, { type: 'audio/mpeg' });
+      audioUrl = URL.createObjectURL(combined);
     }
 
-    // Play chime, then add message
+    // Add message (audio already playing progressively, mark as played)
     soundResponseReceived();
-    await new Promise(r => setTimeout(r, 400));
-    const msg: Message = { role: 'assistant', text: resultText, audioUrl, timestamp: Date.now(), audioPlayed: !!audioUrl };
+    const msg: Message = { role: 'assistant', text: resultText, audioUrl, timestamp: Date.now(), audioPlayed: true };
     pushMessage(msg);
   } catch (err: any) {
     console.error('Process error:', err);
@@ -689,23 +739,16 @@ async function handleRecordingPipeline(blob: Blob) {
   pendingRequests = Math.max(0, pendingRequests - 1);
   render();
 
-  // Directly autoplay the TTS using the persistent (unlocked) audio element
+  // Embed combined audio into the player slot (progressive TTS already played)
   const lastMsgIdx = messages.length - 1;
   const lastMsg = messages[lastMsgIdx];
-  if (autoPlayTTS && !isRecording && lastMsg?.audioUrl && lastMsg.role === 'assistant') {
+  if (lastMsg?.audioUrl && lastMsg.role === 'assistant') {
     ttsPlayingMsgIdx = lastMsgIdx;
-    const a = ensureTtsAudio();
-    a.src = lastMsg.audioUrl;
-    a.playbackRate = playbackSpeed;
-    applyVolumeBoost(a);
-    // Embed into the correct slot
-    const conv = document.getElementById('conversation');
-    const slot = conv?.querySelector(`.audio-slot[data-msg-idx="${lastMsgIdx}"]`);
-    if (slot) { slot.innerHTML = ''; slot.appendChild(a); }
-    a.play().catch((e) => console.warn('TTS autoplay blocked:', e));
-    // Scroll to bottom after embedding
-    if (conv) conv.scrollTop = conv.scrollHeight;
+    // Re-render to embed the audio element
+    render();
   }
+  
+  resetTtsChunks();
 }
 
 function waitForResult(taskId: string): Promise<string> {
@@ -753,7 +796,11 @@ function connectWs() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
-      if (msg.type === 'stream' && (activeStreamId === '*' || msg.streamId === activeStreamId)) {
+      if (msg.type === 'tts-chunk' && (activeStreamId === '*' || msg.streamId === activeStreamId)) {
+        if (autoPlayTTS && !isRecording) {
+          receiveTtsChunk(msg.index, msg.audio, msg.contentType);
+        }
+      } else if (msg.type === 'stream' && (activeStreamId === '*' || msg.streamId === activeStreamId)) {
         if (activeStreamId === '*') activeStreamId = msg.streamId; // lock to this stream
         streamingText = msg.text || '';
         // Update streaming bubble without full re-render
