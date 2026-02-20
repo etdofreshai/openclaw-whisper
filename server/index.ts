@@ -111,13 +111,16 @@ function fetchGatewayHistory(): void {
     resolve: (result: any) => {
       try {
         console.log('Gateway history raw:', JSON.stringify(result).slice(0, 500));
-        const msgs = result?.messages || result?.lastMessages || [];
+        // sessions.preview returns { previews: [{ key, status, items: [{ role, text, ... }] }] }
+        const preview = result?.previews?.[0];
+        const msgs = preview?.items || result?.messages || result?.lastMessages || [];
         const history: HistoryMessage[] = [];
         for (const m of msgs) {
           const role = m.role === 'assistant' ? 'assistant' as const : 'user' as const;
-          const text = typeof m.content === 'string' ? m.content :
+          const text = typeof m.text === 'string' ? m.text :
+            typeof m.content === 'string' ? m.content :
             Array.isArray(m.content) ? m.content.map((c: any) => c?.text || '').filter(Boolean).join('\n') :
-            m.content?.text || String(m.content || '');
+            m.content?.text || String(m.content || m.text || '');
           if (!text) continue;
           history.push({ role, text, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
         }
@@ -130,7 +133,7 @@ function fetchGatewayHistory(): void {
   });
   gatewayWs!.send(JSON.stringify({
     type: 'req', id: requestId, method: 'sessions.preview',
-    params: { sessionKey: getSessionKey(), messageLimit: 100 }
+    params: { keys: [getSessionKey()], limit: 100, maxChars: 10000 }
   }));
 }
 
