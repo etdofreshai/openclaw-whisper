@@ -23,7 +23,7 @@ export class VAD {
   private source: MediaStreamAudioSourceNode | null = null;
   private stream: MediaStream | null = null;
   private interval: ReturnType<typeof setInterval> | null = null;
-  private dataArray: Float32Array | null = null;
+  private dataArray: Float32Array<ArrayBuffer> | null = null;
 
   private noiseFloor = 0;
   private threshold: number;
@@ -60,7 +60,7 @@ export class VAD {
     this.analyser.fftSize = 2048;
     this.source = this.audioCtx.createMediaStreamSource(this.stream);
     this.source.connect(this.analyser);
-    this.dataArray = new Float32Array(this.analyser.fftSize);
+    this.dataArray = new Float32Array(this.analyser.fftSize) as Float32Array<ArrayBuffer>;
     this.active = true;
     this.isSpeaking = false;
     this.paused = false;
