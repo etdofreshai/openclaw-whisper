@@ -350,7 +350,7 @@ app.get('/api/sessions/:key/history', async (req, res) => {
   }
 });
 
-// Chat history for the default session (via gateway WS)
+// Chat history — try sessions.preview via WS, fall back gracefully
 app.get('/api/history', async (_req, res) => {
   try {
     if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) {
@@ -365,10 +365,11 @@ app.get('/api/history', async (_req, res) => {
         timeout,
       });
       gatewayWs!.send(JSON.stringify({
-        type: 'req', id: requestId, method: 'chat.history',
-        params: { sessionKey: getSessionKey(), limit: 100 }
+        type: 'req', id: requestId, method: 'sessions.preview',
+        params: { sessionKey: getSessionKey(), messageLimit: 100 }
       }));
     });
+    console.log('History result:', JSON.stringify(result).slice(0, 500));
     res.json(result);
   } catch (err: any) {
     console.error('History error:', err);
