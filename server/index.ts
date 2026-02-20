@@ -350,21 +350,26 @@ app.get('/api/sessions/:key/history', async (req, res) => {
   }
 });
 
-// Chat history for the default session
+// Chat history for the default session (via gateway WS)
 app.get('/api/history', async (_req, res) => {
   try {
-    const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
-      .replace('wss://', 'https://').replace('ws://', 'http://');
-    const sessionKey = getSessionKey();
-    const response = await fetch(`${gatewayHttpUrl}/v1/sessions/${encodeURIComponent(sessionKey)}/history?limit=100`, {
-      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
-    });
-    if (!response.ok) {
-      console.error(`History fetch error: ${response.status} ${await response.text()}`);
-      return res.status(response.status).json({ error: 'Failed to load history' });
+    if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) {
+      return res.status(503).json({ error: 'Gateway not connected' });
     }
-    const data = await response.json();
-    res.json(data);
+    const requestId = generateRequestId();
+    const result = await new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => { pendingRequests.delete(requestId); reject(new Error('History request timeout')); }, 15000);
+      pendingRequests.set(requestId, {
+        resolve: (r: any) => resolve(r),
+        reject,
+        timeout,
+      });
+      gatewayWs!.send(JSON.stringify({
+        type: 'req', id: requestId, method: 'chat.history',
+        params: { sessionKey: getSessionKey(), limit: 100 }
+      }));
+    });
+    res.json(result);
   } catch (err: any) {
     console.error('History error:', err);
     res.status(500).json({ error: err.message });
