@@ -409,9 +409,37 @@ app.get('/api/sessions/:key/history', async (req, res) => {
   }
 });
 
-// Chat history from server-side JSON file
-app.get('/api/history', (_req, res) => {
-  res.json({ messages: loadHistory() });
+// Chat history — fetch from OpenClaw gateway session (persistent across restarts)
+app.get('/api/history', async (_req, res) => {
+  try {
+    const gatewayHttpUrl = (process.env.OPENCLAW_GATEWAY_URL || 'ws://localhost:18789')
+      .replace('wss://', 'https://').replace('ws://', 'http://');
+    const sessionKey = getSessionKey();
+    const response = await fetch(`${gatewayHttpUrl}/v1/sessions/${encodeURIComponent(sessionKey)}/history?limit=100&includeTools=false`, {
+      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
+    });
+    if (!response.ok) {
+      console.warn(`Gateway history fetch failed: ${response.status}`);
+      // Fall back to local file
+      return res.json({ messages: loadHistory() });
+    }
+    const data = await response.json() as any;
+    const items = data.messages || data.items || data || [];
+    const messages: HistoryMessage[] = [];
+    for (const m of items) {
+      const role = m.role === 'assistant' ? 'assistant' as const : m.role === 'user' ? 'user' as const : null;
+      if (!role) continue;
+      const text = typeof m.content === 'string' ? m.content :
+        Array.isArray(m.content) ? m.content.map((c: any) => c?.text || '').filter(Boolean).join('\n') :
+        m.content?.text || m.text || '';
+      if (!text || text === 'NO_REPLY' || text === 'HEARTBEAT_OK') continue;
+      messages.push({ role, text, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
+    }
+    res.json({ messages });
+  } catch (err: any) {
+    console.error('History fetch error:', err);
+    res.json({ messages: loadHistory() });
+  }
 });
 
 // Health
@@ -423,10 +451,11 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-// Session reset
+// Session reset (clears local state but keeps same gateway session for persistence)
 app.post('/api/session/reset', (_req, res) => {
-  sessionKeySuffix++;
   activeRuns.clear();
+  // Clear local history cache
+  try { fs.unlinkSync(HISTORY_FILE); } catch {}
   res.json({ status: 'ok', sessionKey: getSessionKey() });
 });
 
