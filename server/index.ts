@@ -100,6 +100,40 @@ function connectToGateway(): void {
   }
 }
 
+function fetchGatewayHistory(): void {
+  if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) return;
+  // Only fetch if we have no local history
+  const existing = loadHistory();
+  if (existing.length > 0) { console.log(`Local history has ${existing.length} messages, skipping gateway fetch`); return; }
+  
+  const requestId = `history_${Date.now()}`;
+  const timeout = setTimeout(() => { pendingRequests.delete(requestId); console.log('History fetch timed out'); }, 15000);
+  pendingRequests.set(requestId, {
+    resolve: (result: any) => {
+      try {
+        const messages = result?.messages || result?.lastMessages || [];
+        console.log(`Gateway history: got ${messages.length} messages`);
+        const history: HistoryMessage[] = [];
+        for (const m of messages) {
+          const role = m.role === 'assistant' ? 'assistant' as const : 'user' as const;
+          const text = typeof m.content === 'string' ? m.content : 
+            Array.isArray(m.content) ? m.content.map((c: any) => c?.text || '').filter(Boolean).join('\n') :
+            m.content?.text || String(m.content || '');
+          if (!text) continue;
+          history.push({ role, text, timestamp: m.timestamp ? new Date(m.timestamp).getTime() : Date.now() });
+        }
+        if (history.length > 0) saveHistory(history);
+      } catch (e) { console.error('Error processing gateway history:', e); }
+    },
+    reject: (err: Error) => { console.error('Gateway history fetch failed:', err.message); },
+    timeout,
+  });
+  gatewayWs!.send(JSON.stringify({
+    type: 'req', id: requestId, method: 'sessions.preview',
+    params: { sessionKey: getSessionKey(), messageLimit: 100 }
+  }));
+}
+
 function handleGatewayMessage(message: any): void {
   if (message.type === 'event' && (message.event === 'tick' || message.event === 'health')) return;
   console.log(`GW msg: type=${message.type} event=${message.event||''} id=${message.id||''} ok=${message.ok} err=${message.error ? JSON.stringify(message.error).slice(0,200) : ''}`);
@@ -111,7 +145,7 @@ function handleGatewayMessage(message: any): void {
         type: 'req', id: `connect_${Date.now()}`, method: 'connect',
         params: {
           minProtocol: 3, maxProtocol: 3,
-          client: { id: 'gateway-client', version: '1.0.0', platform: 'linux', mode: 'backend' },
+          client: { id: 'openclaw-control-ui', version: '1.0.0', platform: 'linux', mode: 'ui' },
           role: 'operator', scopes: ['operator.read', 'operator.write', 'operator.admin'],
           caps: [],
           auth: { token: GATEWAY_TOKEN }
@@ -123,6 +157,8 @@ function handleGatewayMessage(message: any): void {
 
   if (message.type === 'res' && message.ok && message.payload?.type === 'hello-ok') {
     console.log('Gateway handshake complete:', JSON.stringify(message.payload).slice(0, 1500));
+    // Fetch history on connect
+    fetchGatewayHistory();
   }
 
   // Handle response to our requests
