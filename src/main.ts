@@ -68,19 +68,31 @@ let mediaSource: MediaElementAudioSourceNode | null = null;
 let boostCtx: AudioContext | null = null;
 
 function applyVolumeBoost(audioEl: HTMLAudioElement) {
+  // If GainNode already created, must use it (createMediaElementSource is irreversible)
+  if (mediaSource && gainNode) {
+    if (boostCtx && boostCtx.state === 'suspended') boostCtx.resume();
+    audioEl.volume = 1;
+    gainNode.gain.value = volumeBoost / 100;
+    return;
+  }
+
+  // For volumes <= 100%, use native volume (no Web Audio needed)
+  if (volumeBoost <= 100) {
+    audioEl.volume = volumeBoost / 100;
+    return;
+  }
+
+  // For volumes > 100%, create Web Audio GainNode (one-time, irreversible per element)
   if (!boostCtx) boostCtx = new AudioContext();
   if (boostCtx.state === 'suspended') boostCtx.resume();
 
-  // Only create the source node once per element
-  if (!mediaSource) {
-    mediaSource = boostCtx.createMediaElementSource(audioEl);
-    gainNode = boostCtx.createGain();
-    mediaSource.connect(gainNode);
-    gainNode.connect(boostCtx.destination);
-  }
+  mediaSource = boostCtx.createMediaElementSource(audioEl);
+  gainNode = boostCtx.createGain();
+  mediaSource.connect(gainNode);
+  gainNode.connect(boostCtx.destination);
 
-  // Set gain (1.0 = 100%, 2.0 = 200%)
-  if (gainNode) gainNode.gain.value = volumeBoost / 100;
+  audioEl.volume = 1;
+  gainNode.gain.value = volumeBoost / 100;
 }
 
 // Persistent audio element for TTS playback (unlocked on user gesture)
