@@ -593,7 +593,7 @@ function stopRecording() {
 
 async function processRecording() {
   const duration = Date.now() - recordingStartTime;
-  if (audioChunks.length === 0 || duration < 300) return; // min 300ms
+  if (audioChunks.length === 0 || duration < 2000) return; // min 2 seconds to filter background noise
 
   // Start cooldown
   recordingCooldown = true;
